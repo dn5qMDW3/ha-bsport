@@ -14,8 +14,8 @@ BSPORT_SIGNIN_URL: Final = f"{BSPORT_API_BASE}/platform/v1/authentication/signin
 OVERVIEW_SCAN_INTERVAL: Final = timedelta(minutes=10)
 
 WAITLIST_INTERVAL_BEYOND_24H: Final = timedelta(minutes=10)
-WAITLIST_INTERVAL_WITHIN_24H: Final = timedelta(minutes=2)
-WAITLIST_INTERVAL_WITHIN_2H: Final = timedelta(seconds=30)
+WAITLIST_INTERVAL_UNDER_24H: Final = timedelta(minutes=2)
+WAITLIST_INTERVAL_UNDER_2H: Final = timedelta(seconds=30)
 
 WATCH_PRE_WINDOW_FAR: Final = timedelta(hours=24)
 WATCH_PRE_WINDOW_MID: Final = timedelta(minutes=5)
