@@ -1,0 +1,32 @@
+book_offer:
+  name: Book offer
+  description: Book a bsport offer (class). Finds the first active pack and books through it.
+  fields:
+    entry_id:
+      name: Config entry
+      description: Entry ID of the bsport account.
+      required: true
+      selector: { text: {} }
+    offer_id:
+      name: Offer ID
+      description: Numeric bsport offer identifier.
+      required: true
+      selector: { number: { min: 1, mode: box } }
+cancel_booking:
+  name: Cancel booking
+  description: Cancel an existing confirmed booking by its offer id.
+  fields:
+    entry_id: { name: Config entry, required: true, selector: { text: {} } }
+    offer_id: { name: Offer ID, required: true, selector: { number: { min: 1, mode: box } } }
+watch_class:
+  name: Watch class
+  description: Add a class to the watch list; notified when registration opens.
+  fields:
+    entry_id: { name: Config entry, required: true, selector: { text: {} } }
+    offer_id: { name: Offer ID, required: true, selector: { number: { min: 1, mode: box } } }
+unwatch_class:
+  name: Unwatch class
+  description: Remove a class from the watch list.
+  fields:
+    entry_id: { name: Config entry, required: true, selector: { text: {} } }
+    offer_id: { name: Offer ID, required: true, selector: { number: { min: 1, mode: box } } }
