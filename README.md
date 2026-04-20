@@ -8,7 +8,7 @@
 
 Track waitlists, get notified the moment a spot opens, one-tap book from the notification, and surface your upcoming classes, passes, and membership as native HA entities.
 
-Works with any bsport-powered studio — Chimosa, Mindful Life Berlin, or any other.
+Tested with Chimosa and Mindful Life Berlin. Should work with any studio on the bsport platform — if yours isn't on the list, pick **Other** during setup and enter its numeric company id.
 
 [![HACS](https://img.shields.io/badge/HACS-Custom_repository-41BDF5?logo=home-assistant)](https://hacs.xyz)
 [![Home Assistant](https://img.shields.io/badge/Home_Assistant-2026.1.0+-03A9F4?logo=home-assistant&logoColor=white)](https://www.home-assistant.io)
