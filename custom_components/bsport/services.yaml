@@ -30,3 +30,13 @@ unwatch_class:
   fields:
     entry_id: { name: Config entry, required: true, selector: { text: {} } }
     offer_id: { name: Offer ID, required: true, selector: { number: { min: 1, mode: box } } }
+simulate_spot_open:
+  name: Simulate spot-open event
+  description: >-
+    Fires a synthetic `bsport_spot_open` event as if a waitlisted spot had
+    become convertible. Use this to verify the notify-and-book automation
+    without waiting for a real spot to open. The payload carries
+    `simulated: true` so production automations can filter it out.
+  fields:
+    entry_id: { name: Config entry, required: true, selector: { text: {} } }
+    offer_id: { name: Offer ID, required: true, selector: { number: { min: 1, mode: box } } }

@@ -145,3 +145,29 @@ async def test_watch_class_service_updates_options(hass: HomeAssistant):
     )
 
     assert 99 in entry.options[OPT_WATCHED_OFFER_IDS]
+
+
+@pytest.mark.asyncio
+async def test_simulate_spot_open_fires_event(hass: HomeAssistant):
+    async_register_services(hass)
+    entry, _ = _build_entry_with_runtime(hass)
+
+    events: list = []
+    hass.bus.async_listen("bsport_spot_open", lambda e: events.append(e))
+
+    await hass.services.async_call(
+        DOMAIN,
+        "simulate_spot_open",
+        {"entry_id": entry.entry_id, "offer_id": 12345},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(events) == 1
+    payload = events[0].data
+    assert payload["offer_id"] == 12345
+    assert payload["entry_id"] == entry.entry_id
+    assert payload["simulated"] is True
+    # When no matching waitlist coordinator exists, the synthetic event uses
+    # placeholder class/time fields — just enough for the automation to run.
+    assert payload["class_name"] == "offer 12345"
