@@ -1,0 +1,27 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Reverse-engineering artifacts (extracted APK, jadx output, strings dumps).
+# Kept locally only — large, and derived from a third-party APK we don't
+# redistribute. API_NOTES.md under docs/recon/ is the checked-in summary.
+_recon/
+*.xapk
+*.apk
+
+# HA custom-components build leftovers
+dist/
+build/
