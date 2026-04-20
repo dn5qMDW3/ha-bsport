@@ -83,11 +83,130 @@ class BsportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class BsportOptionsFlow(config_entries.OptionsFlow):
-    """Placeholder — real add/remove steps land in commit 2."""
+    """Options flow — add or remove watched classes."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["add_watch", "remove_watch"],
+        )
+
+    async def async_step_add_watch(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        from homeassistant.helpers.selector import (
+            SelectOptionDict,
+            SelectSelector,
+            SelectSelectorConfig,
+            SelectSelectorMode,
+        )
+
+        runtime = self.config_entry.runtime_data
+        if user_input is None:
+            try:
+                # Fetch a week's worth; bsport endpoint supports ?date=YYYY-MM-DD
+                # but not ranges — for v1 we query today only. Full date-range
+                # iteration is a follow-up.
+                from datetime import date
+                offers = await runtime.client.list_upcoming_offers(
+                    company=self.config_entry.data[CONF_STUDIO_ID],
+                    date=date.today().isoformat(),
+                )
+            except BsportTransientError:
+                return self.async_abort(reason="cannot_connect")
+
+            options = [
+                SelectOptionDict(
+                    value=str(o.offer_id),
+                    label=f"{o.class_name} — {o.start_at.strftime('%a %d %b %H:%M')}",
+                )
+                for o in offers
+            ]
+            schema = vol.Schema(
+                {
+                    vol.Required("offer_id"): SelectSelector(
+                        SelectSelectorConfig(
+                            options=options,
+                            mode=SelectSelectorMode.DROPDOWN,
+                            custom_value=False,
+                        )
+                    ),
+                }
+            )
+            return self.async_show_form(
+                step_id="add_watch", data_schema=schema
+            )
+
+        new_ids = list(
+            self.config_entry.options.get(OPT_WATCHED_OFFER_IDS, [])
+        )
+        picked = int(user_input["offer_id"])
+        if picked not in new_ids:
+            new_ids.append(picked)
         return self.async_create_entry(
-            title="", data=self.config_entry.options
+            title="",
+            data={
+                **self.config_entry.options,
+                OPT_WATCHED_OFFER_IDS: new_ids,
+            },
+        )
+
+    async def async_step_remove_watch(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        from homeassistant.helpers.selector import (
+            SelectOptionDict,
+            SelectSelector,
+            SelectSelectorConfig,
+            SelectSelectorMode,
+        )
+
+        runtime = self.config_entry.runtime_data
+        current = list(
+            self.config_entry.options.get(OPT_WATCHED_OFFER_IDS, [])
+        )
+        if not current:
+            return self.async_abort(reason="no_watches")
+
+        labels: dict[str, str] = {}
+        for oid in current:
+            coord = runtime.watches.get(oid)
+            if coord and coord.data:
+                offer = coord.data.offer
+                labels[str(oid)] = (
+                    f"{offer.class_name} · "
+                    f"{offer.start_at.strftime('%a %d %b %H:%M')}"
+                )
+            else:
+                labels[str(oid)] = f"Offer #{oid}"
+
+        if user_input is None:
+            schema = vol.Schema(
+                {
+                    vol.Optional("remove"): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(value=v, label=labels[v])
+                                for v in labels
+                            ],
+                            mode=SelectSelectorMode.LIST,
+                            multiple=True,
+                        )
+                    ),
+                }
+            )
+            return self.async_show_form(
+                step_id="remove_watch", data_schema=schema
+            )
+
+        remove_ids = {int(x) for x in user_input.get("remove", [])}
+        new_ids = [oid for oid in current if oid not in remove_ids]
+        return self.async_create_entry(
+            title="",
+            data={
+                **self.config_entry.options,
+                OPT_WATCHED_OFFER_IDS: new_ids,
+            },
         )
