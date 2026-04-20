@@ -1,102 +1,191 @@
-# bsport booking — Home Assistant integration
+<div align="center">
 
-Track class waitlists and upcoming-registration openings on the bsport
-booking platform, get notified as soon as a spot becomes reachable,
-and one-tap (or automatically) book from Home Assistant.
+<img src="docs/brand/icon.png" alt="bsport booking logo" width="128">
 
-## Features
+# bsport booking
 
-- Per-account hub device with upcoming-bookings calendar, pass state,
-  membership state.
-- One device per active waitlist entry — status (`waiting` / `convertible`
-  / …), position, and a Book button.
-- One device per watched class — watch any class whose registration window
-  hasn't opened yet; the integration notifies you when it does.
-- Home Assistant events (`bsport_spot_open`, `bsport_class_bookable`,
-  `bsport_book_succeeded`, `bsport_book_failed`, `bsport_auth_failed`) —
-  the integration is automation-ready; wire your own notification channel.
+**A Home Assistant integration for studios running on the [bsport](https://bsport.io) booking platform.**
+
+Track waitlists, get notified the moment a spot opens, one-tap book from the notification, and surface your upcoming classes, passes, and membership as native HA entities.
+
+Works with any bsport-powered studio — Chimosa, Mindful Life Berlin, or any other.
+
+[![HACS](https://img.shields.io/badge/HACS-Custom_repository-41BDF5?logo=home-assistant)](https://hacs.xyz)
+[![Home Assistant](https://img.shields.io/badge/Home_Assistant-2026.1.0+-03A9F4?logo=home-assistant&logoColor=white)](https://www.home-assistant.io)
+[![Quality scale](https://img.shields.io/badge/Quality_scale-bronze-cd7f32)](https://developers.home-assistant.io/docs/integration_quality_scale/)
+[![Python](https://img.shields.io/badge/python-3.12+-3776ab?logo=python&logoColor=white)](https://www.python.org)
+[![GitHub Release](https://img.shields.io/github/v/release/dn5qMDW3/ha-bsport?include_prereleases&sort=semver)](https://github.com/dn5qMDW3/ha-bsport/releases)
+
+</div>
+
+---
+
+## What you get
+
+| | |
+|---|---|
+| **Live waitlist polling** | Adaptive cadence — 30 seconds close to class start, 10 minutes when it's days away. Fires `bsport_spot_open` on the HA bus the instant `is_convertible` flips true. |
+| **Pre-registration watch** | Mark a class that isn't yet open for booking; the integration polls and fires `bsport_class_bookable` the moment the registration window opens. |
+| **One-tap book from notifications** | Ships with a blueprint that sends an actionable notification and books for you when you tap the button. |
+| **Upcoming-bookings calendar** | Your confirmed classes as a native HA calendar — drop it on a dashboard or trigger automations with it. |
+| **Pass & membership state** | Sensors for classes remaining, pass expiry, membership status, next renewal. |
+| **Multi-studio, multi-account** | One config entry per studio + login. Add as many as you want. |
+| **Tested** | 79 unit tests covering API client, parsers, coordinators, entities, config flow, services. |
+
+## Supported studios
+
+Any studio on the `api.production.bsport.io` platform. Confirmed working:
+
+- **Chimosa** (Berlin)
+- **Mindful Life Berlin**
+
+Your studio uses bsport if its Android package name looks like `com.bsport_<number>`. If so, install this integration and enter your credentials — it'll discover the rest. Not on the list? Pick **Other** in the config flow and enter the numeric id; if it works, open a PR adding the entry to [`KNOWN_STUDIOS`](custom_components/bsport/const.py).
 
 ## Installation
 
-### Via HACS (custom repository)
+### via HACS (recommended)
 
-1. In HACS → *Integrations* → three-dot menu → *Custom repositories*.
-2. Add `https://github.com/dn5qMDW3/ha-bsport` as an *Integration*.
-3. Install *bsport booking*.
-4. Restart Home Assistant.
-5. *Settings → Devices & Services → Add integration → bsport*.
-6. Pick your studio (Chimosa, Mindful Life Berlin, or enter a custom bsport company id).
-7. Enter the email and password you use for that studio's app.
+1. Open HACS → **Integrations** → ⋮ menu → **Custom repositories**
+2. Add `https://github.com/dn5qMDW3/ha-bsport` as an **Integration**
+3. Install **bsport booking**
+4. **Restart Home Assistant**
+5. **Settings → Devices & Services → Add Integration → bsport booking**
+6. Pick your studio → enter email + password
 
-### Multiple accounts
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=bsport)
 
-Add the integration multiple times — one config entry per login. Each
-entry creates its own hub device and exposes entities under it.
+### Manual installation
+
+```bash
+cd /config  # your HA config directory
+mkdir -p custom_components
+curl -L https://github.com/dn5qMDW3/ha-bsport/archive/refs/heads/main.tar.gz \
+  | tar -xz --strip-components=1 ha-bsport-main/custom_components/bsport \
+  -C custom_components/
+```
+
+Restart HA, then add the integration via the UI as above.
 
 ## Entities
 
-| Platform | Entity | Purpose |
+<details open>
+<summary><b>Account hub</b> — one per config entry</summary>
+
+| Platform | Translation key | Device class | Description |
+|---|---|---|---|
+| `sensor` | `next_booking` | `timestamp` | Start time of your next confirmed class |
+| `sensor` | `upcoming_count` | — | Number of upcoming confirmed bookings |
+| `calendar` | `bookings` | — | All upcoming confirmed bookings as a native HA calendar |
+| `sensor` | `pass_classes_remaining` | — | Classes left on your active pass |
+| `sensor` | `pass_expires` | `timestamp` | When your pass expires |
+| `sensor` | `membership_status` | — | `active` / `suspended` / `expired` / `cancelled` |
+| `sensor` | `membership_renewal` | `timestamp` | Next billing date |
+
+</details>
+
+<details>
+<summary><b>Waitlist entry</b> — one per waitlisted class</summary>
+
+| Platform | Translation key | Description |
 |---|---|---|
-| `sensor` | `<account>_next_booking` | Start time of your next class |
-| `sensor` | `<account>_upcoming_count` | Number of upcoming confirmed classes |
-| `calendar` | `<account>_bookings` | All upcoming confirmed bookings |
-| `sensor` | `<account>_pass_classes_remaining` | Classes left on your pass |
-| `sensor` | `<account>_pass_expires` | Pass expiry |
-| `sensor` | `<account>_membership_status` | `active` / `suspended` / `expired` |
-| `sensor` | `<account>_membership_renewal` | Next billing date |
-| `sensor` | `waitlist_<class>_status` | `waiting` → `convertible` when a spot opens |
-| `sensor` | `waitlist_<class>_position` | Position in the waitlist |
-| `button` | `waitlist_<class>_book` | One-tap book |
-| `sensor` | `watch_<class>_status` | `awaiting_window` → `bookable` |
-| `sensor` | `watch_<class>_opens_at` | When registration opens |
-| `button` | `watch_<class>_book` | One-tap book once opened |
+| `sensor` | `waitlist_status` | `waiting` → `opening` → `convertible` |
+| `sensor` | `waitlist_position` | Your position in the queue |
+| `button` | `waitlist_book` | One-tap book when `convertible` |
+
+</details>
+
+<details>
+<summary><b>Watched class</b> — one per class you've added via the options flow</summary>
+
+| Platform | Translation key | Device class | Description |
+|---|---|---|---|
+| `sensor` | `watch_status` | — | `awaiting_window` / `bookable` / `booked` / `expired` |
+| `sensor` | `watch_opens_at` | `timestamp` | When registration opens |
+| `button` | `watch_book` | — | One-tap book once bookable |
+
+</details>
 
 ## Services
 
-| Service | Fields | Effect |
+| Service | Required fields | Effect |
 |---|---|---|
-| `bsport.book_offer` | `entry_id, offer_id` | Book an offer using an active pack |
-| `bsport.cancel_booking` | `entry_id, offer_id` | Cancel a confirmed booking |
-| `bsport.watch_class` | `entry_id, offer_id` | Add a class to the watch list |
-| `bsport.unwatch_class` | `entry_id, offer_id` | Remove a class from the watch list |
-| `bsport.simulate_spot_open` | `entry_id, offer_id` | Fire a fake `bsport_spot_open` event (for testing your notify automation without waiting for a real spot) |
+| `bsport.book_offer` | `entry_id`, `offer_id` | Book an offer through your active pack |
+| `bsport.cancel_booking` | `entry_id`, `offer_id` | Cancel a confirmed booking |
+| `bsport.watch_class` | `entry_id`, `offer_id` | Add a class to the watch list |
+| `bsport.unwatch_class` | `entry_id`, `offer_id` | Remove from the watch list |
+| `bsport.simulate_spot_open` | `entry_id`, `offer_id` | Fire a synthetic `bsport_spot_open` event — useful for testing your notify automation without waiting for a real spot |
 
-## Automation blueprint
+## Events on the HA bus
 
-Import `docs/blueprints/bsport-notify-and-book.yaml` to get a notification
-with an actionable "Book" button when either `bsport_spot_open` or
-`bsport_class_bookable` fires. The notify service is a blueprint input
-(defaults to `notify.persistent_notification`) — set it to
-`notify.mobile_app_<your_device>`, `notify.telegram_bot`, or any other
-`notify.*` service.
+Every event carries `entry_id` so automations on multi-account setups can disambiguate.
 
-### Verifying the notification pipeline
+| Event | When it fires | Payload keys |
+|---|---|---|
+| `bsport_spot_open` | A waitlist entry transitions to `convertible` | `entry_id, offer_id, class_name, category, coach, start_at, position_was` |
+| `bsport_class_bookable` | A watched class becomes bookable | `entry_id, offer_id, class_name, category, coach, start_at` |
+| `bsport_book_succeeded` | `book_offer` returned 2xx | `entry_id, offer_id, class_name, start_at, source` |
+| `bsport_book_failed` | `book_offer` failed | `entry_id, offer_id, class_name, reason, source` |
+| `bsport_auth_failed` | Token refresh and silent re-auth both failed | `entry_id, email` |
 
-Don't wait for a real waitlist spot to open — test the wiring immediately:
+## Automation: notify & one-tap book
 
-1. *Settings → Devices & Services → bsport → your account* → copy the entry
-   id from the URL (`/config/integrations/integration/bsport` shows a
-   UUID-looking slug).
-2. *Developer Tools → Services* → pick `bsport.simulate_spot_open`.
-3. Fill in your `entry_id` and any `offer_id` (use `1` if you don't have a
-   real one handy).
-4. Press *Call Service*.
+Import [`docs/blueprints/bsport-notify-and-book.yaml`](docs/blueprints/bsport-notify-and-book.yaml) as an automation blueprint. It listens for `bsport_spot_open` and `bsport_class_bookable`, sends an actionable notification, waits for you to tap **Book**, and calls `bsport.book_offer`.
 
-If your automation is set up, a notification appears within a second.
-The event payload carries `simulated: true`, so production automations
-that care can filter those out:
+[![Import blueprint into your Home Assistant instance.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fdn5qMDW3%2Fha-bsport%2Fblob%2Fmain%2Fdocs%2Fblueprints%2Fbsport-notify-and-book.yaml)
+
+The blueprint defaults the notify service to `notify.persistent_notification`. Swap to `notify.mobile_app_<your_device>`, `notify.telegram_bot`, `notify.ntfy`, or anything else at automation creation time.
+
+### Verifying the pipeline without waiting
 
 ```yaml
-- condition: template
-  value_template: "{{ not trigger.event.data.get('simulated', False) }}"
+# Developer Tools → Services
+service: bsport.simulate_spot_open
+data:
+  entry_id: <paste from Settings → Devices & Services URL>
+  offer_id: 1
 ```
 
-You can also inspect the event on *Developer Tools → Events → Listen* with
-`bsport_spot_open` as the event type, then call the service to see the raw
-payload.
+A notification appears within a second if your automation is wired correctly. The payload carries `simulated: true`, so production automations can filter synthetic events out:
+
+```yaml
+condition: template
+value_template: "{{ not trigger.event.data.get('simulated', False) }}"
+```
+
+## How it works
+
+<details>
+<summary>Under the hood</summary>
+
+- **Auth** — one POST to `/platform/v1/authentication/signin/with-login/` with email + password returns a 40-char DRF auth token used as `Authorization: Token <token>` on every call.
+- **Polling topology** — one `AccountOverviewCoordinator` per entry (10 min fixed) fans out to `/api-v0/booking/future/`, `/api-v0/waiting-list/booking-option/`, and `/core-data/v1/membership/`. Per-waitlist and per-watch coordinators have their own adaptive schedules.
+- **Adaptive cadence** — waitlist polling tightens to 30 s when the class is under 2 h away, 2 min when under 24 h, 10 min beyond that. Watch polling uses an event-driven schedule anchored to the `bookable_at` timestamp.
+- **Book via pack** — `/buyable/v1/payment-pack/consumer-payment-pack/<pack_id>/register_booking/`. Active packs are discovered and tried in order.
+- **Cancel** — resolves `offer_id → booking_id` via `/booking/future/`, then `POST /book/v1/booking/<booking_id>/cancel/`.
+
+See [`docs/API_NOTES.md`](docs/API_NOTES.md) for the full knowledge base: every confirmed endpoint, error code, known gotcha, and how to re-run the recon.
+
+</details>
+
+## Requirements
+
+- Home Assistant **2026.1.0** or later
+- Python **3.12** or later (ships with HA)
+
+## Contributing
+
+Pull requests welcome. Please run the suite locally before submitting:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install homeassistant==2026.1.0 pytest-homeassistant-custom-component \
+                      aiohttp aioresponses flake8
+.venv/bin/pytest
+.venv/bin/flake8 custom_components tests
+```
+
+New studio? Add its `(company_id, "Studio Name")` tuple to [`KNOWN_STUDIOS`](custom_components/bsport/const.py) and open a PR.
 
 ## License & attribution
 
-This integration talks to the private bsport HTTPS API with credentials
-you already own. It is not affiliated with or endorsed by bsport or any
-studio running on the platform. Use at your own risk.
+This integration talks to the private bsport HTTPS API with credentials the user already owns. It is not affiliated with, endorsed by, or sponsored by bsport or any studio running on the platform. Use at your own risk.
