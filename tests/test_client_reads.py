@@ -88,6 +88,27 @@ PACK_DISABLED = {
     "ending_date": "2026-05-10",
 }
 
+# Reserved for a future month — bsport pre-provisions these for subscription
+# members. Trying to book through them returns 423 because they're not live
+# yet, so list_active_packs must reject them.
+PACK_FUTURE = {
+    "id": 100000002,
+    "disabled": False,
+    "reverted": False,
+    "starting_date": "2999-01-01",
+    "ending_date": "2999-02-01",
+}
+
+# Another currently-active pack, ending later than PACK_ACTIVE — used to
+# verify the sort order puts the soonest-expiring pack first.
+PACK_ACTIVE_LATER = {
+    "id": 109118928,
+    "disabled": False,
+    "reverted": False,
+    "starting_date": "2026-04-11",
+    "ending_date": "2026-06-10",
+}
+
 # ---------------------------------------------------------------------------
 # Parser tests
 # ---------------------------------------------------------------------------
@@ -292,14 +313,22 @@ async def test_list_active_packs_filters_and_orders():
                 packs_url,
                 status=200,
                 payload={
-                    "count": 3,
+                    "count": 5,
                     "next": None,
                     "previous": None,
-                    "results": [PACK_ACTIVE, PACK_EXPIRED, PACK_DISABLED],
+                    "results": [
+                        PACK_ACTIVE_LATER,  # active, ends 2026-06-10
+                        PACK_ACTIVE,        # active, ends 2026-05-10 — should come first
+                        PACK_EXPIRED,       # rejected (expired)
+                        PACK_DISABLED,      # rejected (disabled)
+                        PACK_FUTURE,        # rejected (starting_date in the future)
+                    ],
                 },
             )
             result = await client.list_active_packs()
 
     assert isinstance(result, tuple)
-    assert len(result) == 1
+    assert len(result) == 2
+    # Soonest-ending first so we use today's pack before next month's.
     assert result[0]["id"] == 109118927
+    assert result[1]["id"] == 109118928

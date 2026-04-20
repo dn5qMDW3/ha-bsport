@@ -247,13 +247,22 @@ class BsportClient:
         def _is_active(pack: dict) -> bool:
             if pack.get("disabled") or pack.get("reverted"):
                 return False
+            # Reject packs reserved for future months — they return 423 if we
+            # try to book through them. bsport often pre-provisions a pack per
+            # upcoming month for subscription members.
+            starting = pack.get("starting_date")
+            if starting is not None and starting > today:
+                return False
             ending = pack.get("ending_date")
             if ending is not None and ending < today:
                 return False
             return True
 
         active = [p for p in results if _is_active(p)]
-        active.sort(key=lambda p: p.get("ending_date") or "", reverse=True)
+        # Sort by ending_date ascending — use the pack that expires soonest
+        # first, so upcoming-month packs don't sit unused while today's pack
+        # accumulates the weekly cap.
+        active.sort(key=lambda p: p.get("ending_date") or "")
         return tuple(active)
 
     async def _post_json(
