@@ -27,19 +27,38 @@ from .const import (
     OPT_WATCHED_OFFER_IDS,
 )
 
+# Sentinel chosen from the dropdown when the user's studio isn't in the
+# curated list. Picking it routes to the custom_studio step which asks for
+# the numeric bsport company id.
+STUDIO_OTHER_SENTINEL = "__other__"
+
 _STUDIO_OPTIONS = [
     SelectOptionDict(value=str(sid), label=name)
     for sid, name in KNOWN_STUDIOS
+] + [
+    SelectOptionDict(
+        value=STUDIO_OTHER_SENTINEL,
+        label="Other (enter company id)",
+    ),
 ]
 
+# Dropdown without `custom_value` so HA's selector renders the selected
+# option's label after pick instead of its raw value (the numeric id).
 STUDIO_PICK_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_STUDIO_ID): SelectSelector(
             SelectSelectorConfig(
                 options=_STUDIO_OPTIONS,
                 mode=SelectSelectorMode.DROPDOWN,
-                custom_value=True,
             )
+        ),
+    }
+)
+
+CUSTOM_STUDIO_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_STUDIO_ID): vol.All(
+            vol.Coerce(int), vol.Range(min=1),
         ),
     }
 )
@@ -68,6 +87,8 @@ class BsportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             raw = user_input[CONF_STUDIO_ID]
+            if raw == STUDIO_OTHER_SENTINEL:
+                return await self.async_step_custom_studio()
             try:
                 self._studio_id = int(raw)
             except (TypeError, ValueError):
@@ -76,6 +97,24 @@ class BsportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_credentials()
         return self.async_show_form(
             step_id="user", data_schema=STUDIO_PICK_SCHEMA, errors=errors
+        )
+
+    async def async_step_custom_studio(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Ask for a numeric bsport company id when the studio isn't on the list."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                self._studio_id = int(user_input[CONF_STUDIO_ID])
+            except (TypeError, ValueError):
+                errors["base"] = "invalid_studio_id"
+            else:
+                return await self.async_step_credentials()
+        return self.async_show_form(
+            step_id="custom_studio",
+            data_schema=CUSTOM_STUDIO_SCHEMA,
+            errors=errors,
         )
 
     async def async_step_credentials(

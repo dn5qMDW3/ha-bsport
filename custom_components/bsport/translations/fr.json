@@ -3,9 +3,16 @@
     "step": {
       "user": {
         "title": "Choisissez votre studio",
-        "description": "Sélectionnez le studio propulsé par bsport auquel vous voulez vous connecter. Si le vôtre n'est pas dans la liste, saisissez son identifiant numérique bsport (le nombre après 'com.bsport_' dans le nom de paquet de l'application).",
+        "description": "Sélectionnez le studio propulsé par bsport auquel vous voulez vous connecter. Si le vôtre n'est pas dans la liste, choisissez « Autre (saisir l'identifiant de société) » et entrez le numéro à l'écran suivant.",
         "data": {
           "studio_id": "Studio"
+        }
+      },
+      "custom_studio": {
+        "title": "Studio personnalisé",
+        "description": "Saisissez l'identifiant de société bsport — le numéro après « com.bsport_ » dans le nom de paquet de l'application mobile (par ex. 538 pour Chimosa, 2387 pour Mindful Life Berlin).",
+        "data": {
+          "studio_id": "Identifiant de société"
         }
       },
       "credentials": {

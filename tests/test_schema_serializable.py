@@ -6,6 +6,7 @@ from homeassistant.helpers import config_validation as cv
 
 from custom_components.bsport.config_flow import (
     CREDENTIALS_SCHEMA,
+    CUSTOM_STUDIO_SCHEMA,
     STUDIO_PICK_SCHEMA,
 )
 
@@ -13,6 +14,12 @@ from custom_components.bsport.config_flow import (
 def test_studio_pick_schema_is_serializable():
     voluptuous_serialize.convert(
         STUDIO_PICK_SCHEMA, custom_serializer=cv.custom_serializer
+    )
+
+
+def test_custom_studio_schema_is_serializable():
+    voluptuous_serialize.convert(
+        CUSTOM_STUDIO_SCHEMA, custom_serializer=cv.custom_serializer
     )
 
 

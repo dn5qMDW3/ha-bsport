@@ -3,9 +3,16 @@
     "step": {
       "user": {
         "title": "Pick your studio",
-        "description": "Select the bsport-powered studio you want to connect. If yours isn't on the list, type its numeric bsport company id (it's the number after 'com.bsport_' in the app's package name).",
+        "description": "Select the bsport-powered studio you want to connect. If yours isn't on the list, pick 'Other (enter company id)' and enter the numeric id on the next screen.",
         "data": {
           "studio_id": "Studio"
+        }
+      },
+      "custom_studio": {
+        "title": "Custom studio",
+        "description": "Enter your bsport company id — the number after 'com.bsport_' in the mobile app's package name (e.g. 538 for Chimosa, 2387 for Mindful Life Berlin).",
+        "data": {
+          "studio_id": "Company id"
         }
       },
       "credentials": {
