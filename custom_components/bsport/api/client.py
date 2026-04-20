@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import aiohttp
 
 from ..const import BSPORT_API_BASE, BSPORT_SIGNIN_URL
-from .errors import BsportAuthError, BsportBookError, BsportTransientError, normalize_book_error
+from .errors import BsportAuthError, BsportBookError, BsportRateLimited, BsportTransientError, normalize_book_error
 from .models import AccountOverview, Booking, Offer, WaitlistEntry
 from .parsers import parse_booking, parse_membership, parse_offer, parse_waitlist_entry
 
@@ -31,15 +31,36 @@ class BsportClient:
         self._email = email
         self._password = password
         self._token: str | None = None
+        self._pause_until: datetime | None = None
+
+    async def _wait_if_paused(self) -> None:
+        if self._pause_until is None:
+            return
+        remaining = (
+            self._pause_until - datetime.now(timezone.utc)
+        ).total_seconds()
+        if remaining > 0:
+            await asyncio.sleep(remaining)
+        self._pause_until = None
+
+    def _set_rate_limit(self, retry_after: float) -> None:
+        self._pause_until = datetime.now(timezone.utc) + timedelta(
+            seconds=retry_after
+        )
 
     async def authenticate(self) -> None:
         """Sign in and cache the DRF authtoken."""
+        await self._wait_if_paused()
         try:
             async with self._http.post(
                 BSPORT_SIGNIN_URL,
                 json={"email": self._email, "password": self._password},
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                if resp.status == 429:
+                    retry_after = float(resp.headers.get("Retry-After", 60))
+                    self._set_rate_limit(retry_after)
+                    raise BsportRateLimited(retry_after=retry_after)
                 if resp.status == 403:
                     raise BsportAuthError(
                         "bsport rejected credentials (HTTP 403)"
@@ -70,6 +91,10 @@ class BsportClient:
                 headers=self._auth_headers(),
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                if resp.status == 429:
+                    retry_after = float(resp.headers.get("Retry-After", 60))
+                    self._set_rate_limit(retry_after)
+                    raise BsportRateLimited(retry_after=retry_after)
                 if resp.status == 401 or resp.status == 403:
                     raise BsportAuthError(
                         f"bsport rejected token on /membership/ (HTTP {resp.status})"
@@ -109,13 +134,18 @@ class BsportClient:
         return f"{BSPORT_API_BASE}{path}"
 
     async def _get_json(self, url: str) -> object:
-        """GET url with auth headers; raise on 401/403/5xx/network errors."""
+        """GET url with auth headers; raise on 401/403/429/5xx/network errors."""
+        await self._wait_if_paused()
         try:
             async with self._http.get(
                 url,
                 headers=self._auth_headers(),
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                if resp.status == 429:
+                    retry_after = float(resp.headers.get("Retry-After", 60))
+                    self._set_rate_limit(retry_after)
+                    raise BsportRateLimited(retry_after=retry_after)
                 if resp.status in (401, 403):
                     raise BsportAuthError(
                         f"bsport rejected token (HTTP {resp.status}) at {url}"
@@ -134,6 +164,7 @@ class BsportClient:
 
     async def get_account_overview(self) -> AccountOverview:
         """Fan out to 3 endpoints concurrently and compose an AccountOverview."""
+        await self._wait_if_paused()
         waitlist_url = self._bsport_url("/api-v0/waiting-list/booking-option/")
         bookings_url = self._bsport_url("/api-v0/booking/future/")
         membership_url = self._bsport_url("/core-data/v1/membership/")
@@ -177,6 +208,7 @@ class BsportClient:
         activity: int | None = None,
     ) -> tuple[Offer, ...]:
         """Return first page of upcoming offers for a company."""
+        await self._wait_if_paused()
         params: list[str] = [f"company={company}"]
         if date is not None:
             params.append(f"date={date}")
@@ -190,6 +222,7 @@ class BsportClient:
 
     async def get_waitlist_entry(self, offer_id: int) -> WaitlistEntry | None:
         """Return the waitlist entry for the given offer, or None if not found."""
+        await self._wait_if_paused()
         url = self._bsport_url("/api-v0/waiting-list/booking-option/")
         body = await self._get_json(url)
         entries = body if isinstance(body, list) else []
@@ -200,9 +233,13 @@ class BsportClient:
 
     async def list_active_packs(self) -> tuple[dict, ...]:
         """Return active (non-disabled, non-reverted, non-expired) packs sorted by ending_date desc."""
+        await self._wait_if_paused()
         url = self._bsport_url("/buyable/v1/payment-pack/consumer-payment-pack/")
         body = await self._get_json(url)
-        results: list[dict] = body.get("results", []) if isinstance(body, dict) else []
+        if isinstance(body, list):
+            results: list[dict] = body
+        else:
+            results = body.get("results", []) if isinstance(body, dict) else []
 
         today = date.today().isoformat()
 
@@ -228,9 +265,11 @@ class BsportClient:
         """POST url with auth headers and JSON body.
 
         Returns (status, text, parsed_body_or_None).
-        Raises BsportAuthError on 401/403, BsportTransientError on network errors.
+        Raises BsportAuthError on 401/403, BsportRateLimited on 429,
+        BsportTransientError on network errors.
         Does NOT raise on 5xx or other 4xx — callers handle those.
         """
+        await self._wait_if_paused()
         try:
             async with self._http.post(
                 url,
@@ -238,6 +277,10 @@ class BsportClient:
                 headers=self._auth_headers(),
                 timeout=aiohttp.ClientTimeout(total=timeout_secs),
             ) as resp:
+                if resp.status == 429:
+                    retry_after = float(resp.headers.get("Retry-After", 60))
+                    self._set_rate_limit(retry_after)
+                    raise BsportRateLimited(retry_after=retry_after)
                 if resp.status in (401, 403):
                     raise BsportAuthError(
                         f"bsport rejected token (HTTP {resp.status}) at {url}"
@@ -258,6 +301,7 @@ class BsportClient:
         423 → already on the waitlist; treated as idempotent success.
         Other 4xx → raises BsportBookError via normalize_book_error.
         """
+        await self._wait_if_paused()
         url = self._bsport_url("/api-v0/waiting-list/booking-option/register/")
         status, text, body = await self._post_json(url, json_body={"offer": offer_id})
         if status in (201, 423):
@@ -273,6 +317,7 @@ class BsportClient:
         are locked (423).
         Retries once (with 1 s sleep) on a 5xx from any pack endpoint.
         """
+        await self._wait_if_paused()
         packs = await self.list_active_packs()
         if not packs:
             raise BsportBookError(reason="no_payment_pack", status=0, raw_body="")
@@ -331,6 +376,7 @@ class BsportClient:
         POSTs to the cancel endpoint.
         Raises BsportBookError(reason="unknown_client_error") if no matching booking.
         """
+        await self._wait_if_paused()
         future_url = self._bsport_url("/api-v0/booking/future/")
         future_body = await self._get_json(future_url)
         results = (
