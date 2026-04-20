@@ -1,50 +1,65 @@
 blueprint:
   name: bsport — notify & one-tap book
   description: >-
-    Sends an actionable Mobile App notification when a bsport waitlist spot
-    opens or a watched class becomes bookable. Tapping "Book" calls the
-    bsport.book_offer service.
+    Sends an actionable notification when a bsport waitlist spot opens
+    (`bsport_spot_open` event) or a watched class becomes bookable
+    (`bsport_class_bookable` event). Tapping the "Book" action on the
+    notification triggers the `bsport.book_offer` service for that offer.
   domain: automation
+  source_url: https://github.com/dn5qMDW3/ha-bsport/blob/main/docs/blueprints/bsport-notify-and-book.yaml
   input:
     notify_service:
       name: Notify service
-      description: Your notify service, e.g. notify.mobile_app_pixel_8.
+      description: >-
+        The notify service to call (for example `notify.mobile_app_pixel_8`,
+        `notify.telegram_bot`, or `notify.persistent_notification`). Must be
+        a full `notify.*` service name.
+      default: notify.persistent_notification
       selector:
         text: {}
     entry_id:
-      name: bsport config entry
-      description: Entry ID (copy from /config/entries URL).
+      name: bsport config entry ID
+      description: >-
+        The integration's config-entry ID. Find it in Settings →
+        Devices & Services → bsport (menu → "Manage Configuration") or in
+        the URL when viewing the integration (`/config/integrations/dashboard`).
       selector:
         text: {}
+
 mode: parallel
 max: 10
+
 trigger:
   - platform: event
     event_type: bsport_spot_open
   - platform: event
     event_type: bsport_class_bookable
+
 variables:
+  notify_target: !input notify_service
   class_name: "{{ trigger.event.data.class_name }}"
   offer_id:   "{{ trigger.event.data.offer_id }}"
   start_at:   "{{ trigger.event.data.start_at }}"
+  action_id:  "BSPORT_BOOK_{{ trigger.event.data.offer_id }}"
+
 action:
-  - service: "{{ !input.notify_service }}"
+  - service: "{{ notify_target }}"
     data:
       title: "Spot open: {{ class_name }}"
-      message: "{{ class_name }} at {{ start_at }} — book now?"
+      message: "{{ class_name }} at {{ start_at }} — tap Book to grab it."
       data:
         actions:
-          - action: "BSPORT_BOOK_{{ offer_id }}"
-            title: "Book"
+          - action: "{{ action_id }}"
+            title: Book
   - wait_for_trigger:
       - platform: event
         event_type: mobile_app_notification_action
         event_data:
-          action: "BSPORT_BOOK_{{ offer_id }}"
+          action: "{{ action_id }}"
     timeout:
-      minutes: 5
+      minutes: 10
     continue_on_timeout: false
   - service: bsport.book_offer
     data:
       entry_id: !input entry_id
-      offer_id: "{{ offer_id }}"
+      offer_id: "{{ offer_id | int }}"
