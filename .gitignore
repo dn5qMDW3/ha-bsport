@@ -15,12 +15,24 @@ __pycache__/
 # Claude Code local settings
 .claude/settings.local.json
 
+# Local credentials used by scripts/capture_fixtures.py. Never commit.
+.secrets
+.secrets.*
+
 # Reverse-engineering artifacts (extracted APK, jadx output, strings dumps).
 # Kept locally only — large, and derived from a third-party APK we don't
-# redistribute. API_NOTES.md under docs/recon/ is the checked-in summary.
+# redistribute.
 _recon/
 *.xapk
 *.apk
+
+# Research scripts and captured API fixtures — kept on disk for reference
+# when iterating on the integration, but not part of the committed repo.
+scripts/capture_fixtures.py
+tests/fixtures/bsport_*.json
+tests/fixtures/firebase_*.json
+tests/fixtures/ENDPOINT_MAP.md
+tests/fixtures/README.md
 
 # HA custom-components build leftovers
 dist/
