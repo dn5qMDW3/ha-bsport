@@ -31,7 +31,15 @@ class WaitlistEntry:
     entry_id: int            # waitlist-entry id — distinct from offer.offer_id
     offer: Offer
     status: WaitlistStatus
+    # Zero-indexed position in the waitlist queue (0 = first).
+    # None when we haven't fetched the dedicated position endpoint yet.
     position: int | None
+    # Total number of OTHER people waiting on the same offer. Does not
+    # include the current user. None when unavailable.
+    waiting_list_size: int | None = None
+    # Queue type as reported by the API. 1 = dynamic/unordered, 0 = FIFO.
+    # None when unavailable.
+    dynamic: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

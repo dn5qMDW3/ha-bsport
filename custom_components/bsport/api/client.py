@@ -222,15 +222,59 @@ class BsportClient:
         return tuple(parse_offer(r) for r in results)
 
     async def get_waitlist_entry(self, offer_id: int) -> WaitlistEntry | None:
-        """Return the waitlist entry for the given offer, or None if not found."""
+        """Return the waitlist entry for the given offer, or None if not found.
+
+        Issues two requests in parallel: the entry list (for status / offer
+        details) and the dedicated position endpoint (for the queue fields).
+        Merges the results into a single WaitlistEntry.
+        """
         await self._wait_if_paused()
-        url = self._bsport_url("/api-v0/waiting-list/booking-option/")
-        body = await self._get_json(url)
-        entries = body if isinstance(body, list) else []
-        for entry in entries:
-            if (entry.get("offer") or {}).get("id") == offer_id:
-                return parse_waitlist_entry(entry)
-        return None
+        list_url = self._bsport_url("/api-v0/waiting-list/booking-option/")
+        pos_url = self._bsport_url(
+            f"/book/v1/offer/{offer_id}/waiting_list_position/"
+        )
+        import asyncio
+        list_body, pos_body = await asyncio.gather(
+            self._get_json(list_url),
+            self._get_json(pos_url),
+            return_exceptions=True,
+        )
+
+        # Fall back gracefully if either side errors — the entry itself is
+        # the load-bearing one.
+        if isinstance(list_body, BaseException):
+            raise list_body
+        entries = list_body if isinstance(list_body, list) else []
+        raw = next(
+            (e for e in entries if (e.get("offer") or {}).get("id") == offer_id),
+            None,
+        )
+        if raw is None:
+            return None
+        entry = parse_waitlist_entry(raw)
+
+        position: int | None = None
+        size: int | None = None
+        dynamic: int | None = None
+        if isinstance(pos_body, dict):
+            wlp = pos_body.get("waiting_list_position") or {}
+            if isinstance(wlp, dict):
+                mp = wlp.get("member_position")
+                if isinstance(mp, int):
+                    position = mp
+                ws = wlp.get("waiting_list_size")
+                if isinstance(ws, int):
+                    size = ws
+                dy = wlp.get("dynamic")
+                if isinstance(dy, int):
+                    dynamic = dy
+
+        # Replace the parsed entry with position fields filled in. Using
+        # dataclasses.replace keeps the frozen contract intact.
+        from dataclasses import replace
+        return replace(
+            entry, position=position, waiting_list_size=size, dynamic=dynamic,
+        )
 
     async def list_active_packs(self) -> tuple[dict, ...]:
         """Return active (non-disabled, non-reverted, non-expired) packs sorted by ending_date desc."""

@@ -328,29 +328,72 @@ async def test_list_upcoming_offers_returns_tuple_of_offer():
 @pytest.mark.asyncio
 async def test_get_waitlist_entry_matches_offer_id():
     waitlist_url = f"{BSPORT_API_BASE}/api-v0/waiting-list/booking-option/"
+    pos_url = f"{BSPORT_API_BASE}/book/v1/offer/30362966/waiting_list_position/"
 
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
             client = await _authenticated_client(session, m)
             m.get(waitlist_url, status=200, payload=[WAITLIST_RAW])
+            m.get(
+                pos_url,
+                status=200,
+                payload={
+                    "id": 30362966,
+                    "waiting_list_position": {
+                        "member_position": 2,
+                        "waiting_list_size": 5,
+                        "dynamic": 1,
+                    },
+                },
+            )
             entry = await client.get_waitlist_entry(offer_id=30362966)
 
     assert entry is not None
     assert entry.entry_id == 6521868
     assert entry.offer.offer_id == 30362966
+    # Position metadata merged in from the dedicated endpoint.
+    assert entry.position == 2
+    assert entry.waiting_list_size == 5
+    assert entry.dynamic == 1
 
 
 @pytest.mark.asyncio
 async def test_get_waitlist_entry_returns_none_when_not_found():
     waitlist_url = f"{BSPORT_API_BASE}/api-v0/waiting-list/booking-option/"
+    # Position endpoint is still called (parallel fetch); mock it to 404
+    # and ensure we still correctly return None for the missing entry.
+    pos_url = f"{BSPORT_API_BASE}/book/v1/offer/99999999/waiting_list_position/"
 
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
             client = await _authenticated_client(session, m)
             m.get(waitlist_url, status=200, payload=[WAITLIST_RAW])
+            m.get(pos_url, status=404, payload={"detail": "Not found"})
             entry = await client.get_waitlist_entry(offer_id=99999999)
 
     assert entry is None
+
+
+@pytest.mark.asyncio
+async def test_get_waitlist_entry_tolerates_position_endpoint_failure():
+    """If the position endpoint errors, the entry should still come back
+    with position fields left as None rather than the whole call failing."""
+    waitlist_url = f"{BSPORT_API_BASE}/api-v0/waiting-list/booking-option/"
+    pos_url = f"{BSPORT_API_BASE}/book/v1/offer/30362966/waiting_list_position/"
+
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            client = await _authenticated_client(session, m)
+            m.get(waitlist_url, status=200, payload=[WAITLIST_RAW])
+            m.get(pos_url, status=500, body="")
+            entry = await client.get_waitlist_entry(offer_id=30362966)
+
+    assert entry is not None
+    assert entry.offer.offer_id == 30362966
+    # No crash — position fields just stay None.
+    assert entry.position is None
+    assert entry.waiting_list_size is None
+    assert entry.dynamic is None
 
 
 # ---------------------------------------------------------------------------

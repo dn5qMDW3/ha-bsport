@@ -233,6 +233,22 @@ class WaitlistPositionSensor(
             return None
         return self.coordinator.data.position
 
+    @property
+    def extra_state_attributes(self) -> dict[str, int] | None:
+        """Expose queue size and dynamic-type flag alongside the position."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        attrs: dict[str, int] = {}
+        if data.waiting_list_size is not None:
+            # Number of other people waiting on the same offer (user not
+            # counted). Useful for "someone's in front of me" automations.
+            attrs["others_in_queue"] = data.waiting_list_size
+        if data.dynamic is not None:
+            # 1 = dynamic/priority-based queue, 0 = strict FIFO.
+            attrs["queue_type"] = "dynamic" if data.dynamic == 1 else "fifo"
+        return attrs or None
+
 
 # ---------------------------------------------------------------------------
 # Watch sensors
