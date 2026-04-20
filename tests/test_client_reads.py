@@ -37,6 +37,26 @@ OFFER_RAW = {
     },
 }
 
+# What /book/v1/offer/?company=X&date=Y actually returns — a flatter shape
+# where `activity` is just the integer id, `activity_name` is top-level, and
+# the "full" flag is literally named `full` instead of `is_full`. Confirmed
+# against the live API.
+OFFER_RAW_FLAT = {
+    "id": 30671008,
+    "date_start": "2026-04-27T08:00:00+02:00",
+    "duration_minute": 60,
+    "activity": 963054,  # int, not a dict
+    "activity_name": "Muay Thai - All levels",
+    "coach": 105538,  # int id, not a nested object
+    "establishment": 1859,
+    "company": 538,
+    "available": True,
+    "full": False,  # NB: different key name from nested shape
+    "is_waiting_list_full": False,
+    "timezone_name": "Europe/Berlin",
+    "effectif": 20,
+}
+
 WAITLIST_RAW = {
     "id": 6521868,
     "is_convertible": True,
@@ -129,6 +149,41 @@ def test_parse_offer_extracts_all_fields():
 
     assert offer.is_bookable_now is True
     assert offer.is_waitlist_only is False
+
+
+def test_parse_offer_handles_flat_schedule_shape():
+    """The /book/v1/offer/ schedule endpoint returns activity as a bare int
+    and uses `full` instead of `is_full`. The parser must not crash on that.
+
+    Regression test for AttributeError: 'int' object has no attribute 'get'
+    during options-flow add_watch on a real HA instance.
+    """
+    offer = parse_offer(OFFER_RAW_FLAT)
+    assert offer.offer_id == 30671008
+    assert offer.class_name == "Muay Thai - All levels"
+    assert offer.category == ""  # not surfaced in the flat shape
+    assert offer.coach is None  # coach is an int id, no name to extract
+    assert offer.is_bookable_now is True
+    assert offer.is_waitlist_only is False
+
+    tz_plus2 = timezone(timedelta(hours=2))
+    expected_start = datetime(2026, 4, 27, 8, 0, 0, tzinfo=tz_plus2)
+    assert offer.start_at == expected_start
+    assert offer.end_at == expected_start + timedelta(minutes=60)
+
+
+def test_parse_offer_handles_flat_shape_when_class_is_full():
+    """Flat shape `full: True` flips is_bookable_now off and marks waitlist-only."""
+    raw = {
+        **OFFER_RAW_FLAT,
+        "id": 99999,
+        "available": True,
+        "full": True,
+        "is_waiting_list_full": False,
+    }
+    offer = parse_offer(raw)
+    assert offer.is_bookable_now is False
+    assert offer.is_waitlist_only is True
 
 
 def test_parse_waitlist_entry_convertible():

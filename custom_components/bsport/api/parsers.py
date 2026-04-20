@@ -14,9 +14,35 @@ def _parse_dt(s: str) -> datetime:
 
 
 def parse_offer(raw: dict) -> Offer:
-    """Parse a raw offer dict from /book/v1/offer/ or nested in other endpoints."""
-    activity = raw.get("activity") or {}
-    coach_dict = activity.get("coach") or {}
+    """Parse a raw offer dict from either of the two shapes bsport returns.
+
+    The `/api-v0/waiting-list/booking-option/` and `/api-v0/booking/future/`
+    endpoints return a *nested* shape — `activity` is a dict with `name`,
+    `category`, `coach`, etc. inside.
+
+    The `/book/v1/offer/?company=X&date=Y` schedule endpoint returns a *flat*
+    shape — `activity` is just the integer activity id, `activity_name` lives
+    at the top level, and some flags are renamed (`full` instead of `is_full`).
+
+    This function detects the shape from `activity`'s type and reads the
+    right fields either way.
+    """
+    activity = raw.get("activity")
+    if isinstance(activity, dict):
+        # Nested shape — read from the activity subdocument.
+        class_name = str(activity.get("name") or "")
+        category = str(activity.get("category") or "")
+        coach_obj = activity.get("coach") or {}
+        coach_name = (
+            coach_obj.get("name")
+            if isinstance(coach_obj, dict) and coach_obj
+            else None
+        )
+    else:
+        # Flat shape from /book/v1/offer/ — activity is an int id.
+        class_name = str(raw.get("activity_name") or "")
+        category = ""  # not surfaced at the top level
+        coach_name = None  # top-level `coach` is an int id, not a name
 
     start_at = _parse_dt(raw["date_start"])
     duration = raw.get("duration_minute") or 0
@@ -24,7 +50,10 @@ def parse_offer(raw: dict) -> Offer:
     bookable_at = start_at - timedelta(days=14)
 
     available = raw.get("available")
+    # The flat shape uses `full`; the nested shape uses `is_full`.
     is_full = raw.get("is_full")
+    if is_full is None:
+        is_full = raw.get("full")
     is_waiting_list_full = raw.get("is_waiting_list_full")
 
     is_bookable_now = bool(available) and not bool(is_full)
@@ -32,9 +61,9 @@ def parse_offer(raw: dict) -> Offer:
 
     return Offer(
         offer_id=int(raw["id"]),
-        class_name=str(activity.get("name") or ""),
-        category=str(activity.get("category") or ""),
-        coach=coach_dict.get("name") if coach_dict else None,
+        class_name=class_name,
+        category=category,
+        coach=coach_name,
         start_at=start_at,
         end_at=end_at,
         bookable_at=bookable_at,
