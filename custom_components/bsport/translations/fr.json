@@ -1,0 +1,77 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connectez votre compte bsport",
+        "description": "Entrez l'e-mail et le mot de passe que vous utilisez pour vous connecter à Chimosa (ou à toute application de studio propulsée par bsport).",
+        "data": {
+          "email": "E-mail",
+          "password": "Mot de passe"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "E-mail ou mot de passe invalide."
+    },
+    "abort": {
+      "cannot_connect": "Impossible de joindre bsport — vérifiez votre connexion et réessayez.",
+      "unknown": "Erreur inattendue pendant la configuration. Consultez les journaux Home Assistant.",
+      "already_configured": "Ce compte bsport est déjà configuré."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options bsport",
+        "menu_options": {
+          "add_watch": "Ajouter un cours surveillé",
+          "remove_watch": "Retirer un cours surveillé"
+        }
+      },
+      "add_watch": {
+        "title": "Ajouter un cours surveillé",
+        "description": "Choisissez un cours qui n'est pas encore ouvert aux inscriptions — Home Assistant vous notifiera (et vous permettra de réserver en un appui) dès qu'il sera réservable.",
+        "data": {
+          "offer_id": "Cours"
+        }
+      },
+      "remove_watch": {
+        "title": "Retirer des cours surveillés",
+        "data": {
+          "remove": "Surveillances à retirer"
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "Impossible de joindre bsport.",
+      "no_watches": "Aucun cours surveillé à retirer."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_booking":      { "name": "Prochaine réservation" },
+      "upcoming_count":    { "name": "Réservations à venir" },
+      "pass_classes_remaining": { "name": "Séances restantes" },
+      "pass_expires":      { "name": "Expiration du pass" },
+      "membership_status": { "name": "État de l'abonnement" },
+      "membership_renewal": { "name": "Renouvellement de l'abonnement" },
+      "waitlist_status":   { "name": "État de la liste d'attente" },
+      "waitlist_position": { "name": "Position sur la liste d'attente" },
+      "watch_status":      { "name": "État de la surveillance" },
+      "watch_opens_at":    { "name": "Ouverture des inscriptions" }
+    },
+    "button": {
+      "waitlist_book": { "name": "Réserver" },
+      "watch_book":    { "name": "Réserver" }
+    },
+    "calendar": {
+      "bookings": { "name": "Réservations" }
+    }
+  },
+  "services": {
+    "book_offer":     { "name": "Réserver un cours",        "description": "Réserver un cours bsport." },
+    "cancel_booking": { "name": "Annuler une réservation",  "description": "Annuler une réservation confirmée." },
+    "watch_class":    { "name": "Surveiller un cours",      "description": "Ajouter un cours à la liste de surveillance." },
+    "unwatch_class":  { "name": "Ne plus surveiller",       "description": "Retirer un cours de la liste de surveillance." }
+  }
+}

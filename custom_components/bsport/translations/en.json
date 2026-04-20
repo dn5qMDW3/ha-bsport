@@ -1,0 +1,77 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect your bsport account",
+        "description": "Enter the email and password you use to log into Chimosa (or any bsport-powered studio app).",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password."
+    },
+    "abort": {
+      "cannot_connect": "Cannot reach bsport — check your connection and try again.",
+      "unknown": "Unexpected error during setup. Check Home Assistant logs.",
+      "already_configured": "This bsport account is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "bsport options",
+        "menu_options": {
+          "add_watch": "Add a watched class",
+          "remove_watch": "Remove a watched class"
+        }
+      },
+      "add_watch": {
+        "title": "Add a watched class",
+        "description": "Pick a class that isn't yet open for registration — Home Assistant will notify you (and let you one-tap book) when it becomes bookable.",
+        "data": {
+          "offer_id": "Class"
+        }
+      },
+      "remove_watch": {
+        "title": "Remove watched classes",
+        "data": {
+          "remove": "Watches to remove"
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "Cannot reach bsport.",
+      "no_watches": "No watched classes to remove."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_booking":      { "name": "Next booking" },
+      "upcoming_count":    { "name": "Upcoming bookings" },
+      "pass_classes_remaining": { "name": "Pass classes remaining" },
+      "pass_expires":      { "name": "Pass expires" },
+      "membership_status": { "name": "Membership status" },
+      "membership_renewal": { "name": "Membership renewal" },
+      "waitlist_status":   { "name": "Waitlist status" },
+      "waitlist_position": { "name": "Waitlist position" },
+      "watch_status":      { "name": "Watch status" },
+      "watch_opens_at":    { "name": "Registration opens" }
+    },
+    "button": {
+      "waitlist_book": { "name": "Book" },
+      "watch_book":    { "name": "Book" }
+    },
+    "calendar": {
+      "bookings": { "name": "Bookings" }
+    }
+  },
+  "services": {
+    "book_offer":     { "name": "Book offer",     "description": "Book a bsport offer." },
+    "cancel_booking": { "name": "Cancel booking", "description": "Cancel a confirmed booking." },
+    "watch_class":    { "name": "Watch class",    "description": "Add a class to the watch list." },
+    "unwatch_class":  { "name": "Unwatch class",  "description": "Remove a class from the watch list." }
+  }
+}
