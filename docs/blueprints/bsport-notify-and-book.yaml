@@ -1,0 +1,50 @@
+blueprint:
+  name: bsport — notify & one-tap book
+  description: >-
+    Sends an actionable Mobile App notification when a bsport waitlist spot
+    opens or a watched class becomes bookable. Tapping "Book" calls the
+    bsport.book_offer service.
+  domain: automation
+  input:
+    notify_service:
+      name: Notify service
+      description: Your notify service, e.g. notify.mobile_app_pixel_8.
+      selector:
+        text: {}
+    entry_id:
+      name: bsport config entry
+      description: Entry ID (copy from /config/entries URL).
+      selector:
+        text: {}
+mode: parallel
+max: 10
+trigger:
+  - platform: event
+    event_type: bsport_spot_open
+  - platform: event
+    event_type: bsport_class_bookable
+variables:
+  class_name: "{{ trigger.event.data.class_name }}"
+  offer_id:   "{{ trigger.event.data.offer_id }}"
+  start_at:   "{{ trigger.event.data.start_at }}"
+action:
+  - service: "{{ !input.notify_service }}"
+    data:
+      title: "Spot open: {{ class_name }}"
+      message: "{{ class_name }} at {{ start_at }} — book now?"
+      data:
+        actions:
+          - action: "BSPORT_BOOK_{{ offer_id }}"
+            title: "Book"
+  - wait_for_trigger:
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "BSPORT_BOOK_{{ offer_id }}"
+    timeout:
+      minutes: 5
+    continue_on_timeout: false
+  - service: bsport.book_offer
+    data:
+      entry_id: !input entry_id
+      offer_id: "{{ offer_id }}"
