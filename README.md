@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/brand/icon.png" alt="bsport booking logo" width="128">
+<img src="https://cdn.prod.website-files.com/69b9945989b426c38041ecbc/69b9945989b426c38041edac_Logo%20light.svg" alt="bsport booking logo" width="128">
 
 # bsport booking
 
