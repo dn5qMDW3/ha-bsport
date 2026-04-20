@@ -1,0 +1,13 @@
+{
+  "domain": "bsport",
+  "name": "bsport (Chimosa & other studios)",
+  "codeowners": ["@borisgrushenko"],
+  "config_flow": true,
+  "documentation": "https://github.com/borisgrushenko/ha-Chimosa",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/borisgrushenko/ha-Chimosa/issues",
+  "quality_scale": "bronze",
+  "requirements": [],
+  "version": "0.1.0"
+}
