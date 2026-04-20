@@ -1,6 +1,6 @@
 {
   "domain": "bsport",
-  "name": "bsport (Chimosa & other studios)",
+  "name": "bsport booking",
   "codeowners": ["@borisgrushenko"],
   "config_flow": true,
   "documentation": "https://github.com/borisgrushenko/ha-Chimosa",

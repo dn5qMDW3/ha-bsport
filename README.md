@@ -1,4 +1,4 @@
-# bsport (Chimosa & other studios) — Home Assistant integration
+# bsport booking — Home Assistant integration
 
 Track class waitlists and upcoming-registration openings on the bsport
 booking platform, get notified as soon as a spot becomes reachable,
@@ -22,10 +22,10 @@ and one-tap (or automatically) book from Home Assistant.
 
 1. In HACS → *Integrations* → three-dot menu → *Custom repositories*.
 2. Add `https://github.com/borisgrushenko/ha-Chimosa` as an *Integration*.
-3. Install *bsport (Chimosa & other studios)*.
+3. Install *bsport booking*.
 4. Restart Home Assistant.
 5. *Settings → Devices & Services → Add integration → bsport*.
-6. Enter the email and password you use in the Chimosa / bsport studio app.
+6. Enter the email and password you use in your bsport-powered studio app (Chimosa, Mindful Life Berlin, …).
 
 ### Multiple accounts
 

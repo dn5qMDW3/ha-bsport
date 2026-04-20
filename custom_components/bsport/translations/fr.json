@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connectez votre compte bsport",
-        "description": "Entrez l'e-mail et le mot de passe que vous utilisez pour vous connecter à Chimosa (ou à toute application de studio propulsée par bsport).",
+        "description": "Entrez l'e-mail et le mot de passe que vous utilisez pour vous connecter à votre application de studio propulsée par bsport (Chimosa, Mindful Life Berlin, …).",
         "data": {
           "email": "E-mail",
           "password": "Mot de passe"
