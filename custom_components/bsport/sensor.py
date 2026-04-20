@@ -1,7 +1,7 @@
 """Sensor platform for bsport."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime  # noqa: F401
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.core import HomeAssistant

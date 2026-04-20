@@ -18,7 +18,6 @@ from .const import (
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_STUDIO_ID,
-    DOMAIN,
     OPT_WATCHED_OFFER_IDS,
     PLATFORMS,
 )

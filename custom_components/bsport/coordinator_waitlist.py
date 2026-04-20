@@ -121,7 +121,7 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
         offer = self._initial.offer
         offer_id = offer.offer_id
         try:
-            booking = await self._client.book_offer(offer_id)
+            await self._client.book_offer(offer_id)
         except BsportBookError as err:
             self.hass.bus.async_fire(
                 EVENT_BOOK_FAILED,
