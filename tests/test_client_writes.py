@@ -7,7 +7,6 @@ from aioresponses import aioresponses
 
 from custom_components.bsport.api.client import BsportClient
 from custom_components.bsport.api.errors import (
-    BsportAuthError,
     BsportBookError,
     BsportTransientError,
 )
@@ -70,8 +69,9 @@ _WAITLIST_REGISTER_URL = f"{BSPORT_API_BASE}/api-v0/waiting-list/booking-option/
 _PACKS_URL = f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack/"
 _BOOKINGS_FUTURE_URL = f"{BSPORT_API_BASE}/api-v0/booking/future/"
 _CANCEL_URL = f"{BSPORT_API_BASE}/book/v1/booking/{BOOKING_RAW['id']}/cancel/"
-_BOOK_PACK_URL = f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack/{PACK_ACTIVE['id']}/register_booking/"
-_BOOK_PACK_URL_2 = f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack/{PACK_ACTIVE_2['id']}/register_booking/"
+_PACK_BASE = f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack"
+_BOOK_PACK_URL = f"{_PACK_BASE}/{PACK_ACTIVE['id']}/register_booking/"
+_BOOK_PACK_URL_2 = f"{_PACK_BASE}/{PACK_ACTIVE_2['id']}/register_booking/"
 
 # register_booking response: new booking id in the bookings array
 _BOOK_201_PAYLOAD = {

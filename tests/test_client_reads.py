@@ -92,6 +92,7 @@ PACK_DISABLED = {
 # Parser tests
 # ---------------------------------------------------------------------------
 
+
 def test_parse_offer_extracts_all_fields():
     offer = parse_offer(OFFER_RAW)
     assert offer.offer_id == 30362966

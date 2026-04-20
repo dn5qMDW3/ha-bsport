@@ -1,7 +1,7 @@
 """Tests for the rate-limit pause gate."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import aiohttp
 import pytest

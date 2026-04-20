@@ -13,7 +13,6 @@ from custom_components.bsport.api import (
     WatchedClass,
 )
 from custom_components.bsport.const import (
-    WATCH_POST_OPEN,
     WATCH_PRE_WINDOW_FAR,
     WATCH_PRE_WINDOW_IMMINENT,
     WATCH_PRE_WINDOW_MID,
