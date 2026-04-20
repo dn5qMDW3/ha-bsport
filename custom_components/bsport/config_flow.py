@@ -7,6 +7,12 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .api import AccountProfile, BsportAuthError, BsportClient, BsportTransientError
 from .const import (
@@ -17,10 +23,28 @@ from .const import (
     CONF_STUDIO_ID,
     CONF_STUDIO_NAME,
     DOMAIN,
+    KNOWN_STUDIOS,
     OPT_WATCHED_OFFER_IDS,
 )
 
-USER_SCHEMA = vol.Schema(
+_STUDIO_OPTIONS = [
+    SelectOptionDict(value=str(sid), label=name)
+    for sid, name in KNOWN_STUDIOS
+]
+
+STUDIO_PICK_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_STUDIO_ID): SelectSelector(
+            SelectSelectorConfig(
+                options=_STUDIO_OPTIONS,
+                mode=SelectSelectorMode.DROPDOWN,
+                custom_value=True,
+            )
+        ),
+    }
+)
+
+CREDENTIALS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_EMAIL): str,
         vol.Required(CONF_PASSWORD): str,
@@ -29,14 +53,36 @@ USER_SCHEMA = vol.Schema(
 
 
 class BsportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for bsport."""
+    """Two-step config flow: pick studio, then enter credentials."""
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = 2  # bumped from 1.1 — unique_id format changed
+
+    def __init__(self) -> None:
+        self._studio_id: int | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
+        """Pick the studio."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            raw = user_input[CONF_STUDIO_ID]
+            try:
+                self._studio_id = int(raw)
+            except (TypeError, ValueError):
+                errors["base"] = "invalid_studio_id"
+            else:
+                return await self.async_step_credentials()
+        return self.async_show_form(
+            step_id="user", data_schema=STUDIO_PICK_SCHEMA, errors=errors
+        )
+
+    async def async_step_credentials(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Enter credentials and verify membership."""
+        assert self._studio_id is not None
         errors: dict[str, str] = {}
         if user_input is not None:
             session = async_get_clientsession(self.hass)
@@ -45,16 +91,24 @@ class BsportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 profile: AccountProfile = (
-                    await client.authenticate_and_fetch_profile()
+                    await client.authenticate_and_fetch_profile(
+                        studio_id=self._studio_id
+                    )
                 )
-            except BsportAuthError:
-                errors["base"] = "invalid_auth"
+            except BsportAuthError as err:
+                # Distinguish wrong-credentials from wrong-studio.
+                if "not a member" in str(err).lower():
+                    errors["base"] = "not_a_member"
+                else:
+                    errors["base"] = "invalid_auth"
             except BsportTransientError:
                 return self.async_abort(reason="cannot_connect")
             except Exception:  # noqa: BLE001
                 return self.async_abort(reason="unknown")
             else:
-                await self.async_set_unique_id(str(profile.bsport_user_id))
+                await self.async_set_unique_id(
+                    f"{profile.studio_id}:{profile.bsport_user_id}"
+                )
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=f"{profile.studio_name} ({user_input[CONF_EMAIL]})",
@@ -69,7 +123,9 @@ class BsportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     options={OPT_WATCHED_OFFER_IDS: []},
                 )
         return self.async_show_form(
-            step_id="user", data_schema=USER_SCHEMA, errors=errors
+            step_id="credentials",
+            data_schema=CREDENTIALS_SCHEMA,
+            errors=errors,
         )
 
     @staticmethod
@@ -77,7 +133,6 @@ class BsportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
-        """Return the options flow handler."""
         from .config_flow import BsportOptionsFlow
         return BsportOptionsFlow()
 

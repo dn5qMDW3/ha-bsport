@@ -93,7 +93,7 @@ async def test_authenticate_and_fetch_profile_returns_studio_metadata():
                 },
             )
             client = BsportClient(session, "user@example.com", "pw")
-            profile = await client.authenticate_and_fetch_profile()
+            profile = await client.authenticate_and_fetch_profile(studio_id=538)
     assert profile == AccountProfile(
         bsport_token="tok_40_chars_hex_" + "0" * 23,
         bsport_user_id=9999999,
@@ -126,4 +126,44 @@ async def test_authenticate_and_fetch_profile_raises_when_no_membership():
             )
             client = BsportClient(session, "user@example.com", "pw")
             with pytest.raises(BsportAuthError):
-                await client.authenticate_and_fetch_profile()
+                await client.authenticate_and_fetch_profile(studio_id=538)
+
+
+@pytest.mark.asyncio
+async def test_authenticate_and_fetch_profile_rejects_wrong_studio():
+    membership_url = f"{BSPORT_API_BASE}/core-data/v1/membership/"
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.post(
+                BSPORT_SIGNIN_URL,
+                status=200,
+                payload={
+                    "status": "ok",
+                    "firebaseToken": "fake",
+                    "token": "tok_40_chars_hex_" + "0" * 23,
+                    "email_confirmed": True,
+                    "is_staff": False,
+                    "is_superuser": False,
+                },
+            )
+            m.get(
+                membership_url,
+                status=200,
+                payload={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [
+                        {
+                            "id": 12345,
+                            "company": 538,
+                            "company_name": "Chimosa",
+                            "user_id": 9999999,
+                            "consumer": 9999999,
+                        }
+                    ],
+                },
+            )
+            client = BsportClient(session, "user@example.com", "pw")
+            with pytest.raises(BsportAuthError):
+                await client.authenticate_and_fetch_profile(studio_id=9999)

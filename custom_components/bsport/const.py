@@ -45,3 +45,12 @@ CONF_STUDIO_NAME: Final = "studio_name"
 OPT_WATCHED_OFFER_IDS: Final = "watched_offer_ids"
 
 PLATFORMS: Final = ["sensor", "button", "calendar"]
+
+# Studios with confirmed bsport membership. Presented in the config-flow
+# picker dropdown. The selector keeps `custom_value=True` so users of other
+# studios can still type their company id manually. Grow this list via PR
+# when new studios are confirmed.
+KNOWN_STUDIOS: Final[tuple[tuple[int, str], ...]] = (
+    (538, "Chimosa"),
+    (2387, "Mindful Life Berlin"),
+)

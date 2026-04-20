@@ -82,8 +82,10 @@ class BsportClient:
             raise BsportAuthError("bsport signin did not return a token")
         self._token = token
 
-    async def authenticate_and_fetch_profile(self) -> AccountProfile:
-        """Sign in, then read the user's studio affiliation."""
+    async def authenticate_and_fetch_profile(
+        self, studio_id: int
+    ) -> AccountProfile:
+        """Sign in, then verify the user belongs to `studio_id` and return its metadata."""
         await self.authenticate()
         try:
             async with self._http.get(
@@ -91,11 +93,7 @@ class BsportClient:
                 headers=self._auth_headers(),
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
-                if resp.status == 429:
-                    retry_after = float(resp.headers.get("Retry-After", 60))
-                    self._set_rate_limit(retry_after)
-                    raise BsportRateLimited(retry_after=retry_after)
-                if resp.status == 401 or resp.status == 403:
+                if resp.status in (401, 403):
                     raise BsportAuthError(
                         f"bsport rejected token on /membership/ (HTTP {resp.status})"
                     )
@@ -112,18 +110,21 @@ class BsportClient:
             raise BsportTransientError(f"bsport membership: {err}") from err
 
         results = (body or {}).get("results") or []
-        if not results:
+        matching = next(
+            (r for r in results if int(r.get("company", -1)) == int(studio_id)),
+            None,
+        )
+        if matching is None:
             raise BsportAuthError(
-                "no membership found for this account — user must have at "
-                "least one studio affiliation"
+                f"account not a member of studio {studio_id}; memberships: "
+                f"{[(r.get('company'), r.get('company_name')) for r in results]}"
             )
-        first = results[0]
         assert self._token is not None
         return AccountProfile(
             bsport_token=self._token,
-            bsport_user_id=int(first["user_id"]),
-            studio_id=int(first["company"]),
-            studio_name=str(first["company_name"]),
+            bsport_user_id=int(matching["user_id"]),
+            studio_id=int(matching["company"]),
+            studio_name=str(matching["company_name"]),
         )
 
     def _auth_headers(self) -> dict[str, str]:

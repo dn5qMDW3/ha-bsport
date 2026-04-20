@@ -2,8 +2,15 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connectez votre compte bsport",
-        "description": "Entrez l'e-mail et le mot de passe que vous utilisez pour vous connecter à votre application de studio propulsée par bsport (Chimosa, Mindful Life Berlin, …).",
+        "title": "Choisissez votre studio",
+        "description": "Sélectionnez le studio propulsé par bsport auquel vous voulez vous connecter. Si le vôtre n'est pas dans la liste, saisissez son identifiant numérique bsport (le nombre après 'com.bsport_' dans le nom de paquet de l'application).",
+        "data": {
+          "studio_id": "Studio"
+        }
+      },
+      "credentials": {
+        "title": "Connexion",
+        "description": "Entrez l'e-mail et le mot de passe que vous utilisez pour le studio que vous venez de choisir.",
         "data": {
           "email": "E-mail",
           "password": "Mot de passe"
@@ -11,12 +18,14 @@
       }
     },
     "error": {
-      "invalid_auth": "E-mail ou mot de passe invalide."
+      "invalid_auth": "E-mail ou mot de passe invalide.",
+      "invalid_studio_id": "Cela ne ressemble pas à un identifiant de studio valide.",
+      "not_a_member": "Votre compte bsport n'est pas membre du studio que vous avez choisi. Retournez et sélectionnez un autre studio, ou connectez-vous avec les identifiants que vous utilisez pour celui-ci."
     },
     "abort": {
       "cannot_connect": "Impossible de joindre bsport — vérifiez votre connexion et réessayez.",
       "unknown": "Erreur inattendue pendant la configuration. Consultez les journaux Home Assistant.",
-      "already_configured": "Ce compte bsport est déjà configuré."
+      "already_configured": "Ce studio bsport est déjà configuré pour cet utilisateur."
     }
   },
   "options": {
