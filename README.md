@@ -129,11 +129,11 @@ Every event carries `entry_id` so automations on multi-account setups can disamb
 
 ## Automation: notify & one-tap book
 
-Import [`docs/blueprints/bsport-notify-and-book.yaml`](docs/blueprints/bsport-notify-and-book.yaml) as an automation blueprint. It listens for `bsport_spot_open` and `bsport_class_bookable`, sends an actionable notification, waits for you to tap **Book**, and calls `bsport.book_offer`.
+The integration ships a **bsport — notify & one-tap book** blueprint that's installed automatically the first time you set up the integration. No manual import step.
 
-[![Import blueprint into your Home Assistant instance.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fdn5qMDW3%2Fha-bsport%2Fblob%2Fmain%2Fdocs%2Fblueprints%2Fbsport-notify-and-book.yaml)
+To use it: **Settings → Automations & Scenes → Blueprints** → scroll to `bsport/` → **bsport — notify & one-tap book** → *Create automation from blueprint*. Pick your notify service (defaults to `notify.persistent_notification`; swap to `notify.mobile_app_<your_device>`, `notify.telegram_bot`, `notify.ntfy`, etc.) and paste your bsport entry id. That's it — the automation listens for `bsport_spot_open` and `bsport_class_bookable`, fires an actionable notification with a **Book** button, and calls `bsport.book_offer` when you tap it.
 
-The blueprint defaults the notify service to `notify.persistent_notification`. Swap to `notify.mobile_app_<your_device>`, `notify.telegram_bot`, `notify.ntfy`, or anything else at automation creation time.
+The blueprint file is preserved on integration uninstall if you've modified it; if untouched it gets cleaned up so your config directory stays tidy.
 
 ### Verifying the pipeline without waiting
 
