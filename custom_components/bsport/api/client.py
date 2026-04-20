@@ -8,8 +8,8 @@ from datetime import date
 import aiohttp
 
 from ..const import BSPORT_API_BASE, BSPORT_SIGNIN_URL
-from .errors import BsportAuthError, BsportTransientError
-from .models import AccountOverview, Offer, WaitlistEntry
+from .errors import BsportAuthError, BsportBookError, BsportTransientError, normalize_book_error
+from .models import AccountOverview, Booking, Offer, WaitlistEntry
 from .parsers import parse_booking, parse_membership, parse_offer, parse_waitlist_entry
 
 
@@ -217,3 +217,143 @@ class BsportClient:
         active = [p for p in results if _is_active(p)]
         active.sort(key=lambda p: p.get("ending_date") or "", reverse=True)
         return tuple(active)
+
+    async def _post_json(
+        self,
+        url: str,
+        *,
+        json_body: dict,
+        timeout_secs: float = 15,
+    ) -> tuple[int, str, dict | None]:
+        """POST url with auth headers and JSON body.
+
+        Returns (status, text, parsed_body_or_None).
+        Raises BsportAuthError on 401/403, BsportTransientError on network errors.
+        Does NOT raise on 5xx or other 4xx — callers handle those.
+        """
+        try:
+            async with self._http.post(
+                url,
+                json=json_body,
+                headers=self._auth_headers(),
+                timeout=aiohttp.ClientTimeout(total=timeout_secs),
+            ) as resp:
+                if resp.status in (401, 403):
+                    raise BsportAuthError(
+                        f"bsport rejected token (HTTP {resp.status}) at {url}"
+                    )
+                text = await resp.text()
+                try:
+                    body: dict | None = await resp.json(content_type=None)
+                except Exception:
+                    body = None
+                return resp.status, text, body
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise BsportTransientError(f"bsport network error at {url}: {err}") from err
+
+    async def register_waitlist(self, offer_id: int) -> None:
+        """Register the authenticated user on the waitlist for *offer_id*.
+
+        201 → success.
+        423 → already on the waitlist; treated as idempotent success.
+        Other 4xx → raises BsportBookError via normalize_book_error.
+        """
+        url = self._bsport_url("/api-v0/waiting-list/booking-option/register/")
+        status, text, body = await self._post_json(url, json_body={"offer": offer_id})
+        if status in (201, 423):
+            return None
+        bsport_code = (body or {}).get("code") if isinstance(body, dict) else None
+        raise normalize_book_error(bsport_code, status=status, raw_body=text)
+
+    async def book_offer(self, offer_id: int) -> Booking:
+        """Book *offer_id* using the first available active payment pack.
+
+        Raises BsportBookError(reason="no_payment_pack") if no active packs.
+        Raises BsportBookError(reason="cannot_book", status=423) if all packs
+        are locked (423).
+        Retries once (with 1 s sleep) on a 5xx from any pack endpoint.
+        """
+        packs = await self.list_active_packs()
+        if not packs:
+            raise BsportBookError(reason="no_payment_pack", status=0, raw_body="")
+
+        last_status = 0
+        for pack in packs:
+            pack_id = pack["id"]
+            url = self._bsport_url(
+                f"/buyable/v1/payment-pack/consumer-payment-pack/{pack_id}/register_booking/"
+            )
+            status, text, body = await self._post_json(url, json_body={"offer": offer_id})
+
+            # Retry once on 5xx (spec §7.2)
+            if 500 <= status < 600:
+                await asyncio.sleep(1)
+                status, text, body = await self._post_json(url, json_body={"offer": offer_id})
+
+            if status == 201:
+                # Parse the new booking id from the response bookings array
+                bookings_list = (body or {}).get("bookings", []) if isinstance(body, dict) else []
+                if not bookings_list:
+                    raise BsportTransientError(
+                        "book_offer: 201 response contained no bookings array"
+                    )
+                new_booking_id = int(bookings_list[-1]["id"])
+                # Re-fetch /booking/future/ and return the matching Booking
+                future_url = self._bsport_url("/api-v0/booking/future/")
+                future_body = await self._get_json(future_url)
+                results = (
+                    future_body.get("results", [])
+                    if isinstance(future_body, dict)
+                    else []
+                )
+                for raw in results:
+                    if int(raw.get("id", -1)) == new_booking_id:
+                        return parse_booking(raw)
+                raise BsportTransientError(
+                    "booking confirmed but not yet in /booking/future/"
+                )
+
+            if status == 423:
+                last_status = 423
+                continue
+
+            # Other 4xx
+            bsport_code = (body or {}).get("code") if isinstance(body, dict) else None
+            raise normalize_book_error(bsport_code, status=status, raw_body=text)
+
+        # All packs returned 423
+        raise BsportBookError(reason="cannot_book", status=last_status, raw_body="")
+
+    async def cancel_booking(self, offer_id: int) -> None:
+        """Cancel the booking for *offer_id*.
+
+        Resolves offer_id → booking_id via /api-v0/booking/future/, then
+        POSTs to the cancel endpoint.
+        Raises BsportBookError(reason="unknown_client_error") if no matching booking.
+        """
+        future_url = self._bsport_url("/api-v0/booking/future/")
+        future_body = await self._get_json(future_url)
+        results = (
+            future_body.get("results", []) if isinstance(future_body, dict) else []
+        )
+
+        booking_id: int | None = None
+        for raw in results:
+            offer = raw.get("offer") or {}
+            if int(offer.get("id", -1)) == offer_id:
+                booking_id = int(raw["id"])
+                break
+
+        if booking_id is None:
+            raise BsportBookError(
+                reason="unknown_client_error",
+                status=0,
+                raw_body=f"no booking for offer {offer_id}",
+            )
+
+        cancel_url = self._bsport_url(f"/book/v1/booking/{booking_id}/cancel/")
+        status, text, body = await self._post_json(cancel_url, json_body={})
+        if status == 200:
+            return None
+        bsport_code = (body or {}).get("code") if isinstance(body, dict) else None
+        raise normalize_book_error(bsport_code, status=status, raw_body=text)
