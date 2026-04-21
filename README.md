@@ -12,7 +12,6 @@ Tested with Chimosa and Mindful Life Berlin. Should work with any studio on the 
 
 [![HACS](https://img.shields.io/badge/HACS-Custom_repository-41BDF5?logo=home-assistant)](https://hacs.xyz)
 [![Home Assistant](https://img.shields.io/badge/Home_Assistant-2026.1.0+-03A9F4?logo=home-assistant&logoColor=white)](https://www.home-assistant.io)
-[![Quality scale](https://img.shields.io/badge/Quality_scale-bronze-cd7f32)](https://developers.home-assistant.io/docs/integration_quality_scale/)
 [![Python](https://img.shields.io/badge/python-3.12+-3776ab?logo=python&logoColor=white)](https://www.python.org)
 [![GitHub Release](https://img.shields.io/github/v/release/dn5qMDW3/ha-bsport?include_prereleases&sort=semver)](https://github.com/dn5qMDW3/ha-bsport/releases)
 
