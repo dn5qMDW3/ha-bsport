@@ -20,6 +20,7 @@ from .const import (
     CONF_BSPORT_USER_ID,
     CONF_EMAIL,
     CONF_PASSWORD,
+    CONF_STUDIO_COVER,
     CONF_STUDIO_ID,
     CONF_STUDIO_NAME,
     DOMAIN,
@@ -158,6 +159,7 @@ class BsportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_BSPORT_USER_ID: profile.bsport_user_id,
                         CONF_STUDIO_ID: profile.studio_id,
                         CONF_STUDIO_NAME: profile.studio_name,
+                        CONF_STUDIO_COVER: profile.studio_cover,
                     },
                     options={OPT_WATCHED_OFFER_IDS: []},
                 )

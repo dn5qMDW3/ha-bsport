@@ -40,6 +40,9 @@ CONF_BSPORT_TOKEN: Final = "bsport_token"
 CONF_BSPORT_USER_ID: Final = "bsport_user_id"
 CONF_STUDIO_ID: Final = "studio_id"
 CONF_STUDIO_NAME: Final = "studio_name"
+# Public URL to the studio's cover/logo image. Used as entity_picture on
+# hub-device entities for per-studio visual branding. None when absent.
+CONF_STUDIO_COVER: Final = "studio_cover"
 
 # Config entry options
 OPT_WATCHED_OFFER_IDS: Final = "watched_offer_ids"

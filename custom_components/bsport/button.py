@@ -43,6 +43,12 @@ class WaitlistBookButton(
             entry, offer.offer_id, offer.class_name
         )
 
+    @property
+    def entity_picture(self) -> str | None:
+        """Track the class cover from the current coordinator payload."""
+        data = self.coordinator.data
+        return data.offer.cover_url if data else None
+
     async def async_press(self) -> None:
         await self.coordinator.async_book(source="waitlist")
 
@@ -62,6 +68,11 @@ class WatchBookButton(
         self._attr_device_info = _watch_device(
             entry, offer.offer_id, offer.class_name
         )
+
+    @property
+    def entity_picture(self) -> str | None:
+        data = self.coordinator.data
+        return data.offer.cover_url if data else None
 
     async def async_press(self) -> None:
         await self.coordinator.async_book(source="watch")

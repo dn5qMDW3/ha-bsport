@@ -24,6 +24,10 @@ class Offer:
     bookable_at: datetime
     is_bookable_now: bool
     is_waitlist_only: bool
+    # Public URL to the activity's cover image (used as entity_picture in HA
+    # UI). May be absent when the source response doesn't surface it (e.g.
+    # the flat /book/v1/offer/ schedule listing).
+    cover_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

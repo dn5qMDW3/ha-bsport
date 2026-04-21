@@ -10,10 +10,20 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import BsportConfigEntry
-from .const import DOMAIN
+from .const import CONF_STUDIO_COVER, DOMAIN
 from .coordinator_overview import AccountOverviewCoordinator
 from .coordinator_waitlist import WaitlistEntryCoordinator
 from .coordinator_watch import WatchedClassCoordinator
+
+
+def _studio_cover(entry: BsportConfigEntry) -> str | None:
+    """Public URL to the studio's branding image (set during config flow).
+
+    Returns None for entries created before CONF_STUDIO_COVER was added, so
+    upgrades don't break — HA just falls back to the device_class icon.
+    """
+    cover = entry.data.get(CONF_STUDIO_COVER)
+    return cover if isinstance(cover, str) and cover else None
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +78,8 @@ class NextBookingSensor(
         super().__init__(coord)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_next_booking"
         self._attr_device_info = _hub_device(entry)
+        # Hub-device showcase entity — decorated with the studio's logo.
+        self._attr_entity_picture = _studio_cover(entry)
 
     @property
     def native_value(self) -> datetime | None:
@@ -208,6 +220,12 @@ class WaitlistStatusSensor(
             return None
         return self.coordinator.data.status
 
+    @property
+    def entity_picture(self) -> str | None:
+        """Class cover image from the current offer (falls back to None)."""
+        data = self.coordinator.data
+        return data.offer.cover_url if data else None
+
 
 class WaitlistPositionSensor(
     CoordinatorEntity[WaitlistEntryCoordinator], SensorEntity
@@ -270,6 +288,13 @@ class WatchStatusSensor(
         super().__init__(coord)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_watch_status_{offer_id}"
         self._attr_device_info = _watch_device(entry, offer_id, class_name)
+
+    @property
+    def entity_picture(self) -> str | None:
+        """Class cover image from the watched offer (None when the flat
+        /book/v1/offer/ schedule doesn't carry covers)."""
+        data = self.coordinator.data
+        return data.offer.cover_url if data else None
 
     @property
     def native_value(self) -> str | None:

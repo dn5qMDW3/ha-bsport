@@ -38,11 +38,23 @@ def parse_offer(raw: dict) -> Offer:
             if isinstance(coach_obj, dict) and coach_obj
             else None
         )
+        # Prefer the smaller thumbnail for HA entity pictures — it renders
+        # faster and scales well at sensor-row sizes. Fall back to the main
+        # cover if only that's available.
+        cover_url: str | None = (
+            activity.get("cover_thumbnail")
+            or activity.get("cover_main")
+            or None
+        )
     else:
         # Flat shape from /book/v1/offer/ — activity is an int id.
         class_name = str(raw.get("activity_name") or "")
         category = ""  # not surfaced at the top level
         coach_name = None  # top-level `coach` is an int id, not a name
+        # The flat schedule response doesn't carry cover URLs at the top
+        # level. The watched-class coordinator accepts `cover_url=None` and
+        # HA falls back to the entity's device_class icon.
+        cover_url = None
 
     start_at = _parse_dt(raw["date_start"])
     duration = raw.get("duration_minute") or 0
@@ -69,6 +81,7 @@ def parse_offer(raw: dict) -> Offer:
         bookable_at=bookable_at,
         is_bookable_now=is_bookable_now,
         is_waitlist_only=is_waitlist_only,
+        cover_url=cover_url,
     )
 
 

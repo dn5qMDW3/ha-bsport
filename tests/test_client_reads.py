@@ -186,6 +186,38 @@ def test_parse_offer_handles_flat_shape_when_class_is_full():
     assert offer.is_waitlist_only is True
 
 
+def test_parse_offer_extracts_cover_url_from_nested_shape():
+    """Nested activity with both thumbnail + main — prefer thumbnail."""
+    raw = {
+        **OFFER_RAW,
+        "activity": {
+            **OFFER_RAW["activity"],
+            "cover_thumbnail": "https://cdn.example/thumb.jpg",
+            "cover_main": "https://cdn.example/main.jpg",
+        },
+    }
+    offer = parse_offer(raw)
+    assert offer.cover_url == "https://cdn.example/thumb.jpg"
+
+
+def test_parse_offer_cover_falls_back_to_main_when_no_thumbnail():
+    raw = {
+        **OFFER_RAW,
+        "activity": {
+            **OFFER_RAW["activity"],
+            "cover_main": "https://cdn.example/main.jpg",
+        },
+    }
+    offer = parse_offer(raw)
+    assert offer.cover_url == "https://cdn.example/main.jpg"
+
+
+def test_parse_offer_cover_is_none_on_flat_schedule_shape():
+    """The flat /book/v1/offer/ response does not carry cover URLs."""
+    offer = parse_offer(OFFER_RAW_FLAT)
+    assert offer.cover_url is None
+
+
 def test_parse_waitlist_entry_convertible():
     entry = parse_waitlist_entry(WAITLIST_RAW)
     assert entry.entry_id == 6521868

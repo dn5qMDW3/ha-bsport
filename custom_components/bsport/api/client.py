@@ -19,6 +19,11 @@ class AccountProfile:
     bsport_user_id: int
     studio_id: int
     studio_name: str
+    # Public URL to the studio's branding image (company_cover field from
+    # /core-data/v1/membership/). None when the studio doesn't have one
+    # configured. The config flow stashes this in entry.data so hub-device
+    # entities can reference it as entity_picture.
+    studio_cover: str | None = None
 
 
 class BsportClient:
@@ -120,11 +125,13 @@ class BsportClient:
                 f"{[(r.get('company'), r.get('company_name')) for r in results]}"
             )
         assert self._token is not None
+        cover = matching.get("company_cover")
         return AccountProfile(
             bsport_token=self._token,
             bsport_user_id=int(matching["user_id"]),
             studio_id=int(matching["company"]),
             studio_name=str(matching["company_name"]),
+            studio_cover=str(cover) if isinstance(cover, str) and cover else None,
         )
 
     def _auth_headers(self) -> dict[str, str]:

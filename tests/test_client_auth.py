@@ -100,6 +100,49 @@ async def test_authenticate_and_fetch_profile_returns_studio_metadata():
         studio_id=538,
         studio_name="Chimosa",
     )
+    # No `company_cover` in the response → studio_cover stays None.
+    assert profile.studio_cover is None
+
+
+@pytest.mark.asyncio
+async def test_authenticate_and_fetch_profile_surfaces_company_cover():
+    """When the membership record includes `company_cover`, the profile
+    carries the URL through so the hub entities can use it as
+    entity_picture."""
+    membership_url = f"{BSPORT_API_BASE}/core-data/v1/membership/"
+    cover = "https://assets.production.bsport.io/theme/chimosa_logo.jpg"
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.post(
+                BSPORT_SIGNIN_URL,
+                status=200,
+                payload={
+                    "status": "ok",
+                    "firebaseToken": "fake",
+                    "token": "tok_40_chars_hex_" + "0" * 23,
+                    "email_confirmed": True,
+                    "is_staff": False,
+                    "is_superuser": False,
+                },
+            )
+            m.get(
+                membership_url,
+                status=200,
+                payload={
+                    "count": 1,
+                    "results": [{
+                        "id": 12345,
+                        "company": 538,
+                        "company_name": "Chimosa",
+                        "company_cover": cover,
+                        "user_id": 9999999,
+                        "consumer": 9999999,
+                    }],
+                },
+            )
+            client = BsportClient(session, "user@example.com", "pw")
+            profile = await client.authenticate_and_fetch_profile(studio_id=538)
+    assert profile.studio_cover == cover
 
 
 @pytest.mark.asyncio

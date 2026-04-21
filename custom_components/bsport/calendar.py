@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import BsportConfigEntry
 from .const import DOMAIN
 from .coordinator_overview import AccountOverviewCoordinator
-from .sensor import _hub_device
+from .sensor import _hub_device, _studio_cover
 
 
 async def async_setup_entry(
@@ -35,6 +35,8 @@ class BookingsCalendar(
         super().__init__(coord)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_bookings_calendar"
         self._attr_device_info = _hub_device(entry)
+        # Hub-device showcase entity — studio branding on the calendar card.
+        self._attr_entity_picture = _studio_cover(entry)
 
     def _events(self) -> list[CalendarEvent]:
         overview = self.coordinator.data
