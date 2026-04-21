@@ -33,9 +33,20 @@ from .const import (
 # the numeric bsport company id.
 STUDIO_OTHER_SENTINEL = "__other__"
 
+# Sort the curated studios alphabetically by name (case-insensitive) so the
+# dropdown reads like a directory rather than a numeric-id sequence. The
+# KNOWN_STUDIOS tuple in const.py stays sorted by id for stable diffs in
+# the weekly auto-update PRs; this presentation sort is UI-only.
+#
+# The "Other" sentinel is appended after the sorted studios so it always
+# lives at the bottom of the list regardless of alphabetization.
+#
+# Searchability: HA's SelectSelector with mode=DROPDOWN automatically
+# offers typeahead filtering on the option labels in the frontend — no
+# extra config needed.
 _STUDIO_OPTIONS = [
     SelectOptionDict(value=str(sid), label=name)
-    for sid, name in KNOWN_STUDIOS
+    for sid, name in sorted(KNOWN_STUDIOS, key=lambda s: s[1].casefold())
 ] + [
     SelectOptionDict(
         value=STUDIO_OTHER_SENTINEL,

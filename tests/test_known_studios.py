@@ -42,3 +42,29 @@ def test_includes_the_two_seed_studios() -> None:
     ids = {cid for cid, _ in KNOWN_STUDIOS}
     assert 538 in ids, "Chimosa (id 538) missing from KNOWN_STUDIOS"
     assert 2387 in ids, "Mindful Life Berlin (id 2387) missing from KNOWN_STUDIOS"
+
+
+def test_config_flow_options_are_alphabetical_with_other_last() -> None:
+    """The dropdown presentation sorts studios by name (case-insensitive)
+    so the list reads like a directory. The 'Other' escape-hatch stays
+    pinned at the bottom regardless of alphabetization."""
+    from custom_components.bsport.config_flow import (
+        STUDIO_OTHER_SENTINEL,
+        _STUDIO_OPTIONS,
+    )
+
+    # Last entry is always the escape hatch.
+    assert _STUDIO_OPTIONS[-1]["value"] == STUDIO_OTHER_SENTINEL
+
+    studio_labels = [opt["label"] for opt in _STUDIO_OPTIONS[:-1]]
+    expected = sorted(studio_labels, key=str.casefold)
+    assert studio_labels == expected, (
+        "studios must be ordered alphabetically (case-insensitive) in the "
+        "config-flow dropdown"
+    )
+
+    # Known anchors show up in the expected alphabetical neighbourhood —
+    # "Chimosa" before anything starting with "D", "Mindful Life Berlin"
+    # in the M's.
+    assert "Chimosa" in studio_labels
+    assert "Mindful Life Berlin" in studio_labels
