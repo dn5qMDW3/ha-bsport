@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
-"""Discover bsport-powered studios by scraping public app-store directories.
+"""Discover bsport-powered studios by scraping APKPure's developer page.
 
-bsport's Android apps follow the pattern ``com.bsport_<company_id>``. Both
-APKPure and Google Play index those apps with their display names, so
-enumerating them gives us a ``(company_id, name)`` mapping without any
-credentials or private API access.
-
-Two sources, merged:
-- APKPure's bsport developer page (primary — much broader coverage).
-- Google Play (secondary — catches apps that studios publish under their
-  own developer account rather than bsport's turnkey account).
+bsport's Android apps follow the pattern ``com.bsport_<company_id>``.
+APKPure's bsport developer directory lists those apps with their display
+names, so paginating it gives us a ``(company_id, name)`` mapping without
+any credentials or private API access.
 
 Run with ``--update-const`` to rewrite the ``KNOWN_STUDIOS`` tuple in
 ``custom_components/bsport/const.py``. Without the flag, the script just
-prints the merged list to stdout — safe for CI discovery runs before the
+prints the list to stdout, safe for CI discovery runs before the
 PR-creation step.
 """
 from __future__ import annotations
@@ -24,7 +19,6 @@ import re
 import sys
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -33,25 +27,11 @@ from pathlib import Path
 APKPURE_DEV_URL = "https://apkpure.com/developer/bsport?page={page}"
 APKPURE_MAX_PAGES = 20  # APKPure returns an empty / repeating page past the end.
 
-PLAY_SEARCH_URL = "https://play.google.com/store/search?q={q}&c=apps&hl=en_US"
-PLAY_DETAIL_URL = "https://play.google.com/store/apps/details?id={pkg}&hl=en_US"
-# Seed search queries — different queries surface different corners of Play's
-# index. Any overlap is fine; dedupe by `company_id` at merge time.
-PLAY_QUERIES = (
-    "bsport",
-    "bsport studio",
-    "bsport yoga",
-    "bsport pilates",
-    "bsport fitness",
-    "bsport gym",
-    "bsport boxing",
-)
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONST_PATH = REPO_ROOT / "custom_components" / "bsport" / "const.py"
 
-# User-agent / Accept headers a real browser sends — without these, both sites
-# occasionally serve stripped-down markup or 403s.
+# User-agent / Accept headers a real browser sends, without these APKPure
+# occasionally serves stripped-down markup or 403s.
 BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -62,11 +42,8 @@ BROWSER_HEADERS = {
 }
 
 # Anchors on APKPure repeat "Download APK" / "Read More" sibling links per app
-# card. Drop those — they're text-only buttons, not app titles.
+# card. Drop those, they're text-only buttons, not app titles.
 _APKPURE_NOISE = {"download apk", "read more", "see more", "all apps"}
-
-# Regex matching the ``com.bsport_<digits>`` package name embedded in URLs.
-_PKG_RE = re.compile(r"com\.bsport_(\d+)")
 
 # Zero-width / invisible characters that slip into app titles (BOMs, ZWSPs,
 # RTL markers) and ruin tuple formatting when pasted into Python source.
@@ -145,82 +122,9 @@ def _scrape_apkpure() -> dict[int, str]:
     return out
 
 
-def _scrape_play_search(query: str) -> set[str]:
-    """Return a set of ``com.bsport_<N>`` package names from one Play SERP."""
-    body = _fetch(PLAY_SEARCH_URL.format(q=urllib.parse.quote(query)))
-    if body is None:
-        return set()
-    packages = {f"com.bsport_{m.group(1)}" for m in _PKG_RE.finditer(body)}
-    return packages
-
-
-def _scrape_play_dev_page() -> set[str]:
-    """Pull bsport's own developer listing, if we can find it from any
-    known app page. Less discovery-breadth than APKPure but authoritative for
-    bsport-turnkey studios."""
-    # Use the Chimosa app page as a stable anchor for finding the dev id.
-    anchor = _fetch(PLAY_DETAIL_URL.format(pkg="com.bsport_538"))
-    if anchor is None:
-        return set()
-    dev_ids = re.findall(r"/store/apps/(?:dev|developer)\?id=([^\"&]+)", anchor)
-    if not dev_ids:
-        return set()
-    dev_url = (
-        "https://play.google.com/store/apps/dev?"
-        f"id={urllib.parse.quote(dev_ids[0])}&hl=en_US"
-    )
-    body = _fetch(dev_url)
-    if body is None:
-        return set()
-    return {f"com.bsport_{m.group(1)}" for m in _PKG_RE.finditer(body)}
-
-
-def _scrape_play() -> dict[int, str]:
-    """Combine dev page + all search queries. For each discovered package,
-    fetch its details page once to extract the display name."""
-    print("[play] scanning…")
-    packages: set[str] = set()
-    packages |= _scrape_play_dev_page()
-    for q in PLAY_QUERIES:
-        packages |= _scrape_play_search(q)
-        time.sleep(_THROTTLE)
-    print(f"[play] {len(packages)} packages across dev page + {len(PLAY_QUERIES)} queries")
-
-    out: dict[int, str] = {}
-    for pkg in sorted(packages):
-        m = _PKG_RE.search(pkg)
-        if not m:
-            continue
-        cid = int(m.group(1))
-        detail = _fetch(PLAY_DETAIL_URL.format(pkg=pkg))
-        if detail is None:
-            continue
-        # Display name is in <meta property="og:title" content="X — Apps on
-        # Google Play"> on Play's HTML.
-        title_match = re.search(
-            r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"', detail,
-        )
-        if not title_match:
-            continue
-        name = _clean_name(title_match.group(1))
-        name = re.sub(r"\s*[—-]\s*Apps on Google Play.*$", "", name).strip()
-        if name and cid not in out:
-            out[cid] = name
-        time.sleep(_THROTTLE)
-    return out
-
-
 def discover() -> dict[int, str]:
-    """Run both sources, merge, APKPure wins on name conflict (better coverage)."""
-    apk = _scrape_apkpure()
-    play = _scrape_play()
-    merged = dict(play)  # Play first so APKPure overrides on conflict.
-    merged.update(apk)
-    print(
-        f"\n[merge] apkpure={len(apk)}  play={len(play)}  "
-        f"union={len(merged)}  overlap={len(set(apk) & set(play))}"
-    )
-    return merged
+    """Scrape APKPure's bsport developer page and return {company_id: name}."""
+    return _scrape_apkpure()
 
 
 _TUPLE_PREFIX = "KNOWN_STUDIOS: Final[tuple[tuple[int, str], ...]] = "

@@ -1,8 +1,8 @@
 name: Discover bsport studios
 
-# Re-scrapes the APKPure developer page + Google Play to catch new
-# bsport-powered studios, rewrites KNOWN_STUDIOS in const.py, and opens a
-# PR when the list changes. No secrets required — all sources are public.
+# Re-scrapes the APKPure developer page to catch new bsport-powered
+# studios, rewrites KNOWN_STUDIOS in const.py, and opens a PR when the
+# list changes. No secrets required, the source is public.
 #
 # Security note: this workflow never consumes untrusted event payloads
 # (no issue titles, PR bodies, commit messages etc.) in run steps, so it
@@ -55,7 +55,7 @@ jobs:
           commit-message: "chore: auto-update KNOWN_STUDIOS"
           body: |
             Automated discovery of new bsport-powered studios from
-            APKPure's developer page + Google Play search/dev page.
+            APKPure's bsport developer page.
 
             - Source: `scripts/discover_studios.py`
             - Trigger: scheduled workflow (`.github/workflows/discover-studios.yaml`)
