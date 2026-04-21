@@ -29,16 +29,20 @@ Tested with Chimosa and Mindful Life Berlin. Should work with any studio on the 
 | **Upcoming-bookings calendar** | Your confirmed classes as a native HA calendar, drop it on a dashboard or trigger automations with it. |
 | **Pass & membership state** | Sensors for classes remaining, pass expiry, membership status, next renewal. |
 | **Multi-studio, multi-account** | One config entry per studio + login. Add as many as you want. |
-| **Tested** | 79 unit tests covering API client, parsers, coordinators, entities, config flow, services. |
+| **Searchable studio picker** | 410+ bsport studios pre-loaded in the config flow with typeahead search; the list is auto-refreshed weekly via a scheduled GitHub Action. |
+| **Branded entities** | Per-studio logos and per-class cover images flow through as `entity_picture`, so your HA dashboards look like the studio's own app. |
+| **Tested** | 99 unit tests covering API client, parsers, coordinators, entities, config flow, services. |
 
 ## Supported studios
 
-Any studio on the `api.production.bsport.io` platform. Confirmed working:
+The config flow ships with a searchable dropdown of **410+ studios** on the `api.production.bsport.io` platform, auto-discovered from public app-store listings. The list is regenerated weekly by a scheduled GitHub Action ([`discover-studios.yaml`](.github/workflows/discover-studios.yaml)) that opens a PR on change.
+
+Tested with:
 
 - **Chimosa** (Berlin)
 - **Mindful Life Berlin**
 
-Your studio uses bsport if its Android package name looks like `com.bsport_<number>`. If so, install this integration and enter your credentials, it'll discover the rest. Not on the list? Pick **Other** in the config flow and enter the numeric id; if it works, open a PR adding the entry to [`KNOWN_STUDIOS`](custom_components/bsport/const.py).
+Your studio uses bsport if its Android package name looks like `com.bsport_<number>`. If it's not in the dropdown, pick **Other** in the config flow and enter the numeric id directly; the integration will work the same way.
 
 ## Installation
 
