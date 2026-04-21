@@ -1,0 +1,70 @@
+name: Discover bsport studios
+
+# Re-scrapes the APKPure developer page + Google Play to catch new
+# bsport-powered studios, rewrites KNOWN_STUDIOS in const.py, and opens a
+# PR when the list changes. No secrets required — all sources are public.
+#
+# Security note: this workflow never consumes untrusted event payloads
+# (no issue titles, PR bodies, commit messages etc.) in run steps, so it
+# isn't vulnerable to GitHub Actions script-injection. The only template
+# expressions are `steps.*.outputs.*` reads in `if:` conditions, which are
+# safe against injection by construction.
+
+on:
+  # Weekly, Monday morning UTC. bsport signs new studios continuously but
+  # most weeks the diff is tiny; this cadence keeps PR noise low.
+  schedule:
+    - cron: "0 7 * * 1"
+  # Manual trigger for ad-hoc runs or testing the workflow itself.
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Scrape + update const.py
+        run: python scripts/discover_studios.py --update-const
+
+      - name: Check diff
+        id: diff
+        run: |
+          if git diff --quiet custom_components/bsport/const.py; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "=== diff preview ==="
+            git --no-pager diff --stat custom_components/bsport/const.py
+          fi
+
+      - name: Open PR if KNOWN_STUDIOS changed
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: auto/known-studios
+          delete-branch: true
+          title: "chore: auto-update KNOWN_STUDIOS from app-store scan"
+          commit-message: "chore: auto-update KNOWN_STUDIOS"
+          body: |
+            Automated discovery of new bsport-powered studios from
+            APKPure's developer page + Google Play search/dev page.
+
+            - Source: `scripts/discover_studios.py`
+            - Trigger: scheduled workflow (`.github/workflows/discover-studios.yaml`)
+
+            Review the diff before merging — a new entry just means the
+            scraper found a `com.bsport_<N>` app with a valid display name.
+            Removals are rarer and usually indicate a studio that took its
+            app offline; sanity-check the id against
+            `https://apkpure.com/developer/bsport` before approving.
+          labels: |
+            automation
+            scope:config
