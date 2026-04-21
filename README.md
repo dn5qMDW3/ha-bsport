@@ -8,7 +8,7 @@
 
 Track waitlists, get notified the moment a spot opens, one-tap book from the notification, and surface your upcoming classes, passes, and membership as native HA entities.
 
-Tested with Chimosa and Mindful Life Berlin. Should work with any studio on the bsport platform — if yours isn't on the list, pick **Other** during setup and enter its numeric company id.
+Tested with Chimosa and Mindful Life Berlin. Should work with any studio on the bsport platform, if yours isn't on the list, pick **Other** during setup and enter its numeric company id.
 
 [![HACS](https://img.shields.io/badge/HACS-Custom_repository-41BDF5?logo=home-assistant)](https://hacs.xyz)
 [![Home Assistant](https://img.shields.io/badge/Home_Assistant-2026.1.0+-03A9F4?logo=home-assistant&logoColor=white)](https://www.home-assistant.io)
@@ -24,10 +24,10 @@ Tested with Chimosa and Mindful Life Berlin. Should work with any studio on the 
 
 | | |
 |---|---|
-| **Live waitlist polling** | Adaptive cadence — 30 seconds close to class start, 10 minutes when it's days away. Fires `bsport_spot_open` on the HA bus the instant `is_convertible` flips true. |
+| **Live waitlist polling** | Adaptive cadence: 30 seconds close to class start, 10 minutes when it's days away. Fires `bsport_spot_open` on the HA bus the instant `is_convertible` flips true. |
 | **Pre-registration watch** | Mark a class that isn't yet open for booking; the integration polls and fires `bsport_class_bookable` the moment the registration window opens. |
 | **One-tap book from notifications** | Ships with a blueprint that sends an actionable notification and books for you when you tap the button. |
-| **Upcoming-bookings calendar** | Your confirmed classes as a native HA calendar — drop it on a dashboard or trigger automations with it. |
+| **Upcoming-bookings calendar** | Your confirmed classes as a native HA calendar, drop it on a dashboard or trigger automations with it. |
 | **Pass & membership state** | Sensors for classes remaining, pass expiry, membership status, next renewal. |
 | **Multi-studio, multi-account** | One config entry per studio + login. Add as many as you want. |
 | **Tested** | 79 unit tests covering API client, parsers, coordinators, entities, config flow, services. |
@@ -39,7 +39,7 @@ Any studio on the `api.production.bsport.io` platform. Confirmed working:
 - **Chimosa** (Berlin)
 - **Mindful Life Berlin**
 
-Your studio uses bsport if its Android package name looks like `com.bsport_<number>`. If so, install this integration and enter your credentials — it'll discover the rest. Not on the list? Pick **Other** in the config flow and enter the numeric id; if it works, open a PR adding the entry to [`KNOWN_STUDIOS`](custom_components/bsport/const.py).
+Your studio uses bsport if its Android package name looks like `com.bsport_<number>`. If so, install this integration and enter your credentials, it'll discover the rest. Not on the list? Pick **Other** in the config flow and enter the numeric id; if it works, open a PR adding the entry to [`KNOWN_STUDIOS`](custom_components/bsport/const.py).
 
 ## Installation
 
@@ -69,7 +69,7 @@ Restart HA, then add the integration via the UI as above.
 ## Entities
 
 <details open>
-<summary><b>Account hub</b> — one per config entry</summary>
+<summary><b>Account hub</b>, one per config entry</summary>
 
 | Platform | Translation key | Device class | Description |
 |---|---|---|---|
@@ -84,7 +84,7 @@ Restart HA, then add the integration via the UI as above.
 </details>
 
 <details>
-<summary><b>Waitlist entry</b> — one per waitlisted class</summary>
+<summary><b>Waitlist entry</b>, one per waitlisted class</summary>
 
 | Platform | Translation key | Description |
 |---|---|---|
@@ -95,7 +95,7 @@ Restart HA, then add the integration via the UI as above.
 </details>
 
 <details>
-<summary><b>Watched class</b> — one per class you've added via the options flow</summary>
+<summary><b>Watched class</b>, one per class you've added via the options flow</summary>
 
 | Platform | Translation key | Device class | Description |
 |---|---|---|---|
@@ -113,7 +113,7 @@ Restart HA, then add the integration via the UI as above.
 | `bsport.cancel_booking` | `entry_id`, `offer_id` | Cancel a confirmed booking |
 | `bsport.watch_class` | `entry_id`, `offer_id` | Add a class to the watch list |
 | `bsport.unwatch_class` | `entry_id`, `offer_id` | Remove from the watch list |
-| `bsport.simulate_spot_open` | `entry_id`, `offer_id` | Fire a synthetic `bsport_spot_open` event — useful for testing your notify automation without waiting for a real spot |
+| `bsport.simulate_spot_open` | `entry_id`, `offer_id` | Fire a synthetic `bsport_spot_open` event, useful for testing your notify automation without waiting for a real spot |
 
 ## Events on the HA bus
 
@@ -129,9 +129,9 @@ Every event carries `entry_id` so automations on multi-account setups can disamb
 
 ## Automation: notify & one-tap book
 
-The integration ships a **bsport — notify & one-tap book** blueprint that's installed automatically the first time you set up the integration. No manual import step.
+The integration ships a **bsport: notify & one-tap book** blueprint that's installed automatically the first time you set up the integration. No manual import step.
 
-To use it: **Settings → Automations & Scenes → Blueprints** → scroll to `bsport/` → **bsport — notify & one-tap book** → *Create automation from blueprint*. Pick your notify service (defaults to `notify.persistent_notification`; swap to `notify.mobile_app_<your_device>`, `notify.telegram_bot`, `notify.ntfy`, etc.) and paste your bsport entry id. That's it — the automation listens for `bsport_spot_open` and `bsport_class_bookable`, fires an actionable notification with a **Book** button, and calls `bsport.book_offer` when you tap it.
+To use it: **Settings → Automations & Scenes → Blueprints** → scroll to `bsport/` → **bsport: notify & one-tap book** → *Create automation from blueprint*. Pick your notify service (defaults to `notify.persistent_notification`; swap to `notify.mobile_app_<your_device>`, `notify.telegram_bot`, `notify.ntfy`, etc.) and paste your bsport entry id. That's it, the automation listens for `bsport_spot_open` and `bsport_class_bookable`, fires an actionable notification with a **Book** button, and calls `bsport.book_offer` when you tap it.
 
 The blueprint file is preserved on integration uninstall if you've modified it; if untouched it gets cleaned up so your config directory stays tidy.
 
@@ -157,11 +157,11 @@ value_template: "{{ not trigger.event.data.get('simulated', False) }}"
 <details>
 <summary>Under the hood</summary>
 
-- **Auth** — one POST to `/platform/v1/authentication/signin/with-login/` with email + password returns a 40-char DRF auth token used as `Authorization: Token <token>` on every call.
-- **Polling topology** — one `AccountOverviewCoordinator` per entry (10 min fixed) fans out to `/api-v0/booking/future/`, `/api-v0/waiting-list/booking-option/`, and `/core-data/v1/membership/`. Per-waitlist and per-watch coordinators have their own adaptive schedules.
-- **Adaptive cadence** — waitlist polling tightens to 30 s when the class is under 2 h away, 2 min when under 24 h, 10 min beyond that. Watch polling uses an event-driven schedule anchored to the `bookable_at` timestamp.
-- **Book via pack** — `/buyable/v1/payment-pack/consumer-payment-pack/<pack_id>/register_booking/`. Active packs are discovered and tried in order.
-- **Cancel** — resolves `offer_id → booking_id` via `/booking/future/`, then `POST /book/v1/booking/<booking_id>/cancel/`.
+- **Auth**: one POST to `/platform/v1/authentication/signin/with-login/` with email + password returns a 40-char DRF auth token used as `Authorization: Token <token>` on every call.
+- **Polling topology**: one `AccountOverviewCoordinator` per entry (10 min fixed) fans out to `/api-v0/booking/future/`, `/api-v0/waiting-list/booking-option/`, and `/core-data/v1/membership/`. Per-waitlist and per-watch coordinators have their own adaptive schedules.
+- **Adaptive cadence**: waitlist polling tightens to 30 s when the class is under 2 h away, 2 min when under 24 h, 10 min beyond that. Watch polling uses an event-driven schedule anchored to the `bookable_at` timestamp.
+- **Book via pack**: `/buyable/v1/payment-pack/consumer-payment-pack/<pack_id>/register_booking/`. Active packs are discovered and tried in order.
+- **Cancel**: resolves `offer_id → booking_id` via `/booking/future/`, then `POST /book/v1/booking/<booking_id>/cancel/`.
 
 See [`docs/API_NOTES.md`](docs/API_NOTES.md) for the full knowledge base: every confirmed endpoint, error code, known gotcha, and how to re-run the recon.
 
