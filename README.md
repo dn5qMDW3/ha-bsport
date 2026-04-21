@@ -37,13 +37,6 @@ Should work with any studio on the bsport platform, if yours isn't on the list, 
 
 The config flow ships with a searchable dropdown of **410+ studios** on the `api.production.bsport.io` platform, auto-discovered from public app-store listings. The list is regenerated weekly by a scheduled GitHub Action ([`discover-studios.yaml`](.github/workflows/discover-studios.yaml)) that opens a PR on change.
 
-Tested with:
-
-- **Chimosa** (Berlin)
-- **Mindful Life Berlin**
-
-Your studio uses bsport if its Android package name looks like `com.bsport_<number>`. If it's not in the dropdown, pick **Other** in the config flow and enter the numeric id directly; the integration will work the same way.
-
 ## Installation
 
 ### via HACS (recommended)
