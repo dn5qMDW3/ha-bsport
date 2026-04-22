@@ -25,7 +25,7 @@ from .const import (
     PLATFORMS,
 )
 from .coordinator_overview import AccountOverviewCoordinator
-from .coordinator_waitlist import WaitlistEntryCoordinator
+from .coordinator_waitlist import WaitlistBatchCache, WaitlistEntryCoordinator
 from .coordinator_watch import WatchedClassCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +35,7 @@ _LOGGER = logging.getLogger(__name__)
 class BsportRuntimeData:
     client: BsportClient
     overview: AccountOverviewCoordinator
+    waitlist_cache: WaitlistBatchCache
     waitlists: dict[int, WaitlistEntryCoordinator] = field(default_factory=dict)
     watches: dict[int, WatchedClassCoordinator] = field(default_factory=dict)
 
@@ -150,7 +151,11 @@ async def async_setup_entry(
     )
     await overview.async_config_entry_first_refresh()
 
-    runtime = BsportRuntimeData(client=client, overview=overview)
+    runtime = BsportRuntimeData(
+        client=client,
+        overview=overview,
+        waitlist_cache=WaitlistBatchCache(client),
+    )
     entry.runtime_data = runtime
 
     await _reconcile_child_coordinators(hass, entry)
@@ -300,6 +305,7 @@ async def _reconcile_child_coordinators(
             coord = WaitlistEntryCoordinator(
                 hass, runtime.client, entry_id=entry.entry_id,
                 initial=entry_obj,
+                batch_cache=runtime.waitlist_cache,
             )
             await coord.async_config_entry_first_refresh()
             runtime.waitlists[oid] = coord

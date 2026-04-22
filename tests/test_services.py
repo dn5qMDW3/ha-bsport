@@ -76,9 +76,11 @@ def _build_entry_with_runtime(hass: HomeAssistant, *, book_mock=None, cancel_moc
 
     # Build a minimal runtime_data namespace.
     from custom_components.bsport import BsportRuntimeData
+    from custom_components.bsport.coordinator_waitlist import WaitlistBatchCache
     runtime = BsportRuntimeData(
         client=client,
         overview=overview_coord,
+        waitlist_cache=WaitlistBatchCache(client),
     )
     entry.runtime_data = runtime
 

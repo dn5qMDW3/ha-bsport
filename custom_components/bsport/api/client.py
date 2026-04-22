@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import aiohttp
 
@@ -11,6 +11,26 @@ from ..const import BSPORT_API_BASE, BSPORT_SIGNIN_URL
 from .errors import BsportAuthError, BsportBookError, BsportRateLimited, BsportTransientError, normalize_book_error
 from .models import AccountOverview, Booking, Offer, WaitlistEntry
 from .parsers import parse_booking, parse_membership, parse_offer, parse_waitlist_entry
+
+
+def _extract_error_code(error_codes: object) -> str | None:
+    """Pull the first usable code string out of a `user_registration` error payload.
+
+    bsport has shipped a few shapes here: a list of strings, a list of dicts
+    keyed by `code`, or a list of nested objects. We don't rely on a fixed
+    schema — just flatten and take the first non-empty token.
+    """
+    if not isinstance(error_codes, list) or not error_codes:
+        return None
+    first = error_codes[0]
+    if isinstance(first, str):
+        return first
+    if isinstance(first, dict):
+        for key in ("code", "error_code", "reason"):
+            val = first.get(key)
+            if isinstance(val, str) and val:
+                return val
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,93 +248,79 @@ class BsportClient:
         results = body.get("results", []) if isinstance(body, dict) else []
         return tuple(parse_offer(r) for r in results)
 
-    async def get_waitlist_entry(self, offer_id: int) -> WaitlistEntry | None:
-        """Return the waitlist entry for the given offer, or None if not found.
+    async def list_waitlists_with_positions(
+        self,
+    ) -> tuple[WaitlistEntry, ...]:
+        """Return every waitlist entry with its queue position in 2 HTTP calls.
 
-        Issues two requests in parallel: the entry list (for status / offer
-        details) and the dedicated position endpoint (for the queue fields).
-        Merges the results into a single WaitlistEntry.
+        Replaces the N×2 per-offer fan-out the coordinators used before:
+        one call to `/api-v0/waiting-list/booking-option/` for the list, one
+        call to `/book/v1/offer/waiting_list_position_list/?id__in=<ids>` for
+        all positions. Empty list → empty result, no second request.
         """
         await self._wait_if_paused()
         list_url = self._bsport_url("/api-v0/waiting-list/booking-option/")
+        list_body = await self._get_json(list_url)
+        raw_list = list_body if isinstance(list_body, list) else []
+        if not raw_list:
+            return ()
+
+        entries = [parse_waitlist_entry(raw) for raw in raw_list]
+        ids = ",".join(str(e.offer.offer_id) for e in entries)
         pos_url = self._bsport_url(
-            f"/book/v1/offer/{offer_id}/waiting_list_position/"
+            f"/book/v1/offer/waiting_list_position_list/?id__in={ids}"
         )
-        import asyncio
-        list_body, pos_body = await asyncio.gather(
-            self._get_json(list_url),
-            self._get_json(pos_url),
-            return_exceptions=True,
-        )
-
-        # Fall back gracefully if either side errors — the entry itself is
-        # the load-bearing one.
-        if isinstance(list_body, BaseException):
-            raise list_body
-        entries = list_body if isinstance(list_body, list) else []
-        raw = next(
-            (e for e in entries if (e.get("offer") or {}).get("id") == offer_id),
-            None,
-        )
-        if raw is None:
-            return None
-        entry = parse_waitlist_entry(raw)
-
-        position: int | None = None
-        size: int | None = None
-        dynamic: int | None = None
+        positions: dict[int, tuple[int | None, int | None, int | None]] = {}
+        try:
+            pos_body = await self._get_json(pos_url)
+        except BsportTransientError:
+            # Positions are decoration; missing them just leaves the fields
+            # None. The convertible transition detection works regardless.
+            pos_body = None
         if isinstance(pos_body, dict):
-            wlp = pos_body.get("waiting_list_position") or {}
-            if isinstance(wlp, dict):
-                mp = wlp.get("member_position")
-                if isinstance(mp, int):
-                    position = mp
-                ws = wlp.get("waiting_list_size")
-                if isinstance(ws, int):
-                    size = ws
-                dy = wlp.get("dynamic")
-                if isinstance(dy, int):
-                    dynamic = dy
+            for row in pos_body.get("results") or []:
+                oid = int(row.get("id", 0)) if isinstance(row, dict) else 0
+                wlp = (row or {}).get("waiting_list_position") or {}
+                if not isinstance(wlp, dict):
+                    continue
+                mp = wlp.get("member_position") if isinstance(wlp.get("member_position"), int) else None
+                ws = wlp.get("waiting_list_size") if isinstance(wlp.get("waiting_list_size"), int) else None
+                dy = wlp.get("dynamic") if isinstance(wlp.get("dynamic"), int) else None
+                positions[oid] = (mp, ws, dy)
 
-        # Replace the parsed entry with position fields filled in. Using
-        # dataclasses.replace keeps the frozen contract intact.
         from dataclasses import replace
-        return replace(
-            entry, position=position, waiting_list_size=size, dynamic=dynamic,
-        )
+        out: list[WaitlistEntry] = []
+        for e in entries:
+            mp, ws, dy = positions.get(e.offer.offer_id, (None, None, None))
+            out.append(
+                replace(e, position=mp, waiting_list_size=ws, dynamic=dy)
+            )
+        return tuple(out)
 
-    async def list_active_packs(self) -> tuple[dict, ...]:
-        """Return active (non-disabled, non-reverted, non-expired) packs sorted by ending_date desc."""
+    async def _compatible_packs_for_offer(self, offer_id: int) -> list[dict]:
+        """Return payment packs that can book *offer_id*, in server-preferred order.
+
+        Uses bsport's `compatible_with_offer_unfiltered/?mine=true` endpoint,
+        which mirrors what the mobile app does — the server already knows
+        which of the user's packs are usable for this offer (no expired /
+        future-reserved / disabled), so we avoid the "try each pack until one
+        sticks" loop the integration used before.
+        """
         await self._wait_if_paused()
-        url = self._bsport_url("/buyable/v1/payment-pack/consumer-payment-pack/")
-        body = await self._get_json(url)
-        if isinstance(body, list):
-            results: list[dict] = body
-        else:
-            results = body.get("results", []) if isinstance(body, dict) else []
-
-        today = date.today().isoformat()
-
-        def _is_active(pack: dict) -> bool:
-            if pack.get("disabled") or pack.get("reverted"):
-                return False
-            # Reject packs reserved for future months — they return 423 if we
-            # try to book through them. bsport often pre-provisions a pack per
-            # upcoming month for subscription members.
-            starting = pack.get("starting_date")
-            if starting is not None and starting > today:
-                return False
-            ending = pack.get("ending_date")
-            if ending is not None and ending < today:
-                return False
-            return True
-
-        active = [p for p in results if _is_active(p)]
-        # Sort by ending_date ascending — use the pack that expires soonest
-        # first, so upcoming-month packs don't sit unused while today's pack
-        # accumulates the weekly cap.
-        active.sort(key=lambda p: p.get("ending_date") or "")
-        return tuple(active)
+        url = self._bsport_url(
+            "/buyable/v1/payment-pack/consumer-payment-pack/"
+            "compatible_with_offer_unfiltered/?mine=true"
+        )
+        status, text, body = await self._post_json(
+            url, json_body={"offer": offer_id}
+        )
+        if status != 200:
+            raise BsportTransientError(
+                f"compatible-packs lookup failed: HTTP {status}"
+            )
+        if not isinstance(body, list):
+            return []
+        return body
 
     async def _post_json(
         self,
@@ -358,15 +364,36 @@ class BsportClient:
     async def register_waitlist(self, offer_id: int) -> None:
         """Register the authenticated user on the waitlist for *offer_id*.
 
-        201 → success.
-        423 → already on the waitlist; treated as idempotent success.
-        Other 4xx → raises BsportBookError via normalize_book_error.
+        Uses `/book/v1/offer/user_registration/` — the same endpoint the
+        mobile app uses for both direct booking and waitlist joining. The
+        server routes the offer into `offer_on_waiting_list` when the class
+        is full (expected case) or `offers_booked` if a spot was available.
+        Either outcome is success from our POV: the member ends up in a
+        valid queue or a real booking.
         """
         await self._wait_if_paused()
-        url = self._bsport_url("/api-v0/waiting-list/booking-option/register/")
-        status, text, body = await self._post_json(url, json_body={"offer": offer_id})
-        if status in (201, 423):
-            return None
+        url = self._bsport_url("/book/v1/offer/user_registration/")
+        status, text, body = await self._post_json(
+            url,
+            json_body={
+                "waiting_list": [
+                    {"offer_id": offer_id, "extra_data": {}},
+                ],
+            },
+        )
+        if status == 200 and isinstance(body, dict):
+            waitlisted = body.get("offer_on_waiting_list") or []
+            booked = body.get("offers_booked") or []
+            if offer_id in waitlisted or offer_id in booked:
+                return None
+            error_codes = body.get("error_codes") or []
+            if not error_codes:
+                # Nothing placed, nothing reported — treat as already-waitlisted.
+                # bsport's response to a duplicate register is undocumented;
+                # this is the least-surprising interpretation.
+                return None
+            code = _extract_error_code(error_codes)
+            raise normalize_book_error(code, status=status, raw_body=text)
         bsport_code = (body or {}).get("code") if isinstance(body, dict) else None
         raise normalize_book_error(bsport_code, status=status, raw_body=text)
 
@@ -388,64 +415,89 @@ class BsportClient:
         raise normalize_book_error(bsport_code, status=status, raw_body=text)
 
     async def book_offer(self, offer_id: int) -> Booking:
-        """Book *offer_id* using the first available active payment pack.
+        """Book *offer_id* via the mobile-app booking endpoint.
 
-        Raises BsportBookError(reason="no_payment_pack") if no active packs.
-        Raises BsportBookError(reason="cannot_book", status=423) if all packs
-        are locked (423).
-        Retries once (with 1 s sleep) on a 5xx from any pack endpoint.
+        Mirrors the mobile client flow:
+
+        1. Ask the server which of the user's packs are compatible with
+           the offer (handles expiry, reservation, pack-type rules).
+        2. POST `/book/v1/offer/user_registration/` with the first pack +
+           the offer in `offers` (not `waiting_list`). The server places
+           the offer into one of three response buckets:
+             * `offers_booked`          → real booking, we're done
+             * `offer_on_waiting_list`  → class was full, user got a
+                                           waitlist entry instead; surface
+                                           as `cannot_book` so callers can
+                                           distinguish this from a success
+             * `error_codes`            → pack rejected / quota hit / etc.
+
+        Raises BsportBookError(reason="no_payment_pack") if no compatible pack.
+        Raises BsportBookError(reason="cannot_book") if the class was full.
+        Retries once (1s sleep) on a 5xx from the booking endpoint.
         """
         await self._wait_if_paused()
-        packs = await self.list_active_packs()
+        packs = await self._compatible_packs_for_offer(offer_id)
         if not packs:
             raise BsportBookError(reason="no_payment_pack", status=0, raw_body="")
 
-        last_status = 0
-        for pack in packs:
-            pack_id = pack["id"]
-            url = self._bsport_url(
-                f"/buyable/v1/payment-pack/consumer-payment-pack/{pack_id}/register_booking/"
+        pack_id = int(packs[0]["id"])
+        url = self._bsport_url("/book/v1/offer/user_registration/")
+        body_json = {
+            "consumer_payment_pack": pack_id,
+            "offers": [
+                {
+                    "offer_id": str(offer_id),
+                    "extra_data": {
+                        "booking_for_member": None,
+                        "additional_guest_info": [],
+                    },
+                }
+            ],
+            "waiting_list": [],
+        }
+        status, text, body = await self._post_json(url, json_body=body_json)
+        if 500 <= status < 600:
+            await asyncio.sleep(1)
+            status, text, body = await self._post_json(url, json_body=body_json)
+
+        if status == 200 and isinstance(body, dict):
+            booked = body.get("offers_booked") or []
+            waitlisted = body.get("offer_on_waiting_list") or []
+            error_codes = body.get("error_codes") or []
+            if offer_id in booked:
+                return await self._resolve_new_booking(offer_id)
+            if offer_id in waitlisted:
+                # Class was full; user ended up on the waitlist. That's not
+                # a book success — surface it so the caller can decide.
+                raise BsportBookError(
+                    reason="cannot_book", status=423, raw_body=text,
+                )
+            if error_codes:
+                code = _extract_error_code(error_codes)
+                raise normalize_book_error(code, status=status, raw_body=text)
+            raise BsportTransientError(
+                f"user_registration returned no booking/waitlist/error for {offer_id}"
             )
-            status, text, body = await self._post_json(url, json_body={"offer": offer_id})
 
-            # Retry once on 5xx (spec §7.2)
-            if 500 <= status < 600:
-                await asyncio.sleep(1)
-                status, text, body = await self._post_json(url, json_body={"offer": offer_id})
+        bsport_code = (body or {}).get("code") if isinstance(body, dict) else None
+        raise normalize_book_error(bsport_code, status=status, raw_body=text)
 
-            if status == 201:
-                # Parse the new booking id from the response bookings array
-                bookings_list = (body or {}).get("bookings", []) if isinstance(body, dict) else []
-                if not bookings_list:
-                    raise BsportTransientError(
-                        "book_offer: 201 response contained no bookings array"
-                    )
-                new_booking_id = int(bookings_list[-1]["id"])
-                # Re-fetch /booking/future/ and return the matching Booking
-                future_url = self._bsport_url("/api-v0/booking/future/")
-                future_body = await self._get_json(future_url)
-                results = (
-                    future_body.get("results", [])
-                    if isinstance(future_body, dict)
-                    else []
-                )
-                for raw in results:
-                    if int(raw.get("id", -1)) == new_booking_id:
-                        return parse_booking(raw)
-                raise BsportTransientError(
-                    "booking confirmed but not yet in /booking/future/"
-                )
-
-            if status == 423:
-                last_status = 423
-                continue
-
-            # Other 4xx
-            bsport_code = (body or {}).get("code") if isinstance(body, dict) else None
-            raise normalize_book_error(bsport_code, status=status, raw_body=text)
-
-        # All packs returned 423
-        raise BsportBookError(reason="cannot_book", status=last_status, raw_body="")
+    async def _resolve_new_booking(self, offer_id: int) -> Booking:
+        """Look up the just-created booking by offer_id via /booking/future/."""
+        future_url = self._bsport_url("/api-v0/booking/future/")
+        future_body = await self._get_json(future_url)
+        results = (
+            future_body.get("results", [])
+            if isinstance(future_body, dict)
+            else []
+        )
+        for raw in results:
+            offer = raw.get("offer") or {}
+            if int(offer.get("id", -1)) == offer_id:
+                return parse_booking(raw)
+        raise BsportTransientError(
+            f"booking confirmed but offer {offer_id} not yet in /booking/future/"
+        )
 
     async def cancel_booking(self, offer_id: int) -> None:
         """Cancel the booking for *offer_id*.

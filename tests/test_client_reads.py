@@ -82,53 +82,6 @@ MEMBERSHIP_RAW = {
     "consumer": 9999999,
 }
 
-PACK_ACTIVE = {
-    "id": 109118927,
-    "disabled": False,
-    "reverted": False,
-    "starting_date": "2026-04-11",
-    "ending_date": "2026-05-10",
-    "available_credits": 0,
-    "used_credits": 0,
-}
-
-PACK_EXPIRED = {
-    "id": 100000000,
-    "disabled": False,
-    "reverted": False,
-    "starting_date": "2020-01-01",
-    "ending_date": "2020-02-01",
-}
-
-PACK_DISABLED = {
-    "id": 100000001,
-    "disabled": True,
-    "reverted": False,
-    "starting_date": "2026-04-11",
-    "ending_date": "2026-05-10",
-}
-
-# Reserved for a future month — bsport pre-provisions these for subscription
-# members. Trying to book through them returns 423 because they're not live
-# yet, so list_active_packs must reject them.
-PACK_FUTURE = {
-    "id": 100000002,
-    "disabled": False,
-    "reverted": False,
-    "starting_date": "2999-01-01",
-    "ending_date": "2999-02-01",
-}
-
-# Another currently-active pack, ending later than PACK_ACTIVE — used to
-# verify the sort order puts the soonest-expiring pack first.
-PACK_ACTIVE_LATER = {
-    "id": 109118928,
-    "disabled": False,
-    "reverted": False,
-    "starting_date": "2026-04-11",
-    "ending_date": "2026-06-10",
-}
-
 # ---------------------------------------------------------------------------
 # Parser tests
 # ---------------------------------------------------------------------------
@@ -354,13 +307,17 @@ async def test_list_upcoming_offers_returns_tuple_of_offer():
 
 
 # ---------------------------------------------------------------------------
-# get_waitlist_entry
+# list_waitlists_with_positions
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_get_waitlist_entry_matches_offer_id():
+async def test_list_waitlists_with_positions_batches_position_lookup():
+    """One list call + one batched position call, no per-offer fan-out."""
     waitlist_url = f"{BSPORT_API_BASE}/api-v0/waiting-list/booking-option/"
-    pos_url = f"{BSPORT_API_BASE}/book/v1/offer/30362966/waiting_list_position/"
+    pos_url = (
+        f"{BSPORT_API_BASE}/book/v1/offer/waiting_list_position_list/"
+        f"?id__in=30362966"
+    )
 
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
@@ -370,95 +327,66 @@ async def test_get_waitlist_entry_matches_offer_id():
                 pos_url,
                 status=200,
                 payload={
-                    "id": 30362966,
-                    "waiting_list_position": {
-                        "member_position": 2,
-                        "waiting_list_size": 5,
-                        "dynamic": 1,
-                    },
+                    "links": {"next": None, "previous": None},
+                    "next_page": None,
+                    "page": 1,
+                    "count": 1,
+                    "results": [
+                        {
+                            "id": 30362966,
+                            "waiting_list_position": {
+                                "member_position": 2,
+                                "waiting_list_size": 5,
+                                "dynamic": 1,
+                            },
+                        }
+                    ],
                 },
             )
-            entry = await client.get_waitlist_entry(offer_id=30362966)
+            result = await client.list_waitlists_with_positions()
 
-    assert entry is not None
+    assert len(result) == 1
+    entry = result[0]
     assert entry.entry_id == 6521868
     assert entry.offer.offer_id == 30362966
-    # Position metadata merged in from the dedicated endpoint.
     assert entry.position == 2
     assert entry.waiting_list_size == 5
     assert entry.dynamic == 1
 
 
 @pytest.mark.asyncio
-async def test_get_waitlist_entry_returns_none_when_not_found():
+async def test_list_waitlists_with_positions_empty_list_skips_batch_call():
+    """When the user has no waitlist entries, skip the position call entirely."""
     waitlist_url = f"{BSPORT_API_BASE}/api-v0/waiting-list/booking-option/"
-    # Position endpoint is still called (parallel fetch); mock it to 404
-    # and ensure we still correctly return None for the missing entry.
-    pos_url = f"{BSPORT_API_BASE}/book/v1/offer/99999999/waiting_list_position/"
-
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
             client = await _authenticated_client(session, m)
-            m.get(waitlist_url, status=200, payload=[WAITLIST_RAW])
-            m.get(pos_url, status=404, payload={"detail": "Not found"})
-            entry = await client.get_waitlist_entry(offer_id=99999999)
+            m.get(waitlist_url, status=200, payload=[])
+            result = await client.list_waitlists_with_positions()
 
-    assert entry is None
+    assert result == ()
 
 
 @pytest.mark.asyncio
-async def test_get_waitlist_entry_tolerates_position_endpoint_failure():
-    """If the position endpoint errors, the entry should still come back
-    with position fields left as None rather than the whole call failing."""
+async def test_list_waitlists_with_positions_tolerates_position_failure():
+    """If the batched position lookup errors, entries still come back
+    with position fields as None."""
     waitlist_url = f"{BSPORT_API_BASE}/api-v0/waiting-list/booking-option/"
-    pos_url = f"{BSPORT_API_BASE}/book/v1/offer/30362966/waiting_list_position/"
+    pos_url = (
+        f"{BSPORT_API_BASE}/book/v1/offer/waiting_list_position_list/"
+        f"?id__in=30362966"
+    )
 
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
             client = await _authenticated_client(session, m)
             m.get(waitlist_url, status=200, payload=[WAITLIST_RAW])
             m.get(pos_url, status=500, body="")
-            entry = await client.get_waitlist_entry(offer_id=30362966)
+            result = await client.list_waitlists_with_positions()
 
-    assert entry is not None
+    assert len(result) == 1
+    entry = result[0]
     assert entry.offer.offer_id == 30362966
-    # No crash — position fields just stay None.
     assert entry.position is None
     assert entry.waiting_list_size is None
     assert entry.dynamic is None
-
-
-# ---------------------------------------------------------------------------
-# list_active_packs
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_list_active_packs_filters_and_orders():
-    packs_url = f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack/"
-
-    async with aiohttp.ClientSession() as session:
-        with aioresponses() as m:
-            client = await _authenticated_client(session, m)
-            m.get(
-                packs_url,
-                status=200,
-                payload={
-                    "count": 5,
-                    "next": None,
-                    "previous": None,
-                    "results": [
-                        PACK_ACTIVE_LATER,  # active, ends 2026-06-10
-                        PACK_ACTIVE,        # active, ends 2026-05-10 — should come first
-                        PACK_EXPIRED,       # rejected (expired)
-                        PACK_DISABLED,      # rejected (disabled)
-                        PACK_FUTURE,        # rejected (starting_date in the future)
-                    ],
-                },
-            )
-            result = await client.list_active_packs()
-
-    assert isinstance(result, tuple)
-    assert len(result) == 2
-    # Soonest-ending first so we use today's pack before next month's.
-    assert result[0]["id"] == 109118927
-    assert result[1]["id"] == 109118928

@@ -52,32 +52,16 @@ PACK_ACTIVE = {
     "used_credits": 0,
 }
 
-PACK_ACTIVE_2 = {
-    "id": 109118928,
-    "disabled": False,
-    "reverted": False,
-    "starting_date": "2026-03-01",
-    "ending_date": "2026-04-30",
-    "available_credits": 0,
-    "used_credits": 0,
-}
-
 _TOKEN = "test_token_fakeauthtoken0000000000000000"
 
 # Frequently used URLs
-_WAITLIST_REGISTER_URL = f"{BSPORT_API_BASE}/api-v0/waiting-list/booking-option/register/"
-_PACKS_URL = f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack/"
+_USER_REG_URL = f"{BSPORT_API_BASE}/book/v1/offer/user_registration/"
+_COMPAT_PACKS_URL = (
+    f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack/"
+    f"compatible_with_offer_unfiltered/?mine=true"
+)
 _BOOKINGS_FUTURE_URL = f"{BSPORT_API_BASE}/api-v0/booking/future/"
 _CANCEL_URL = f"{BSPORT_API_BASE}/book/v1/booking/{BOOKING_RAW['id']}/cancel/"
-_PACK_BASE = f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack"
-_BOOK_PACK_URL = f"{_PACK_BASE}/{PACK_ACTIVE['id']}/register_booking/"
-_BOOK_PACK_URL_2 = f"{_PACK_BASE}/{PACK_ACTIVE_2['id']}/register_booking/"
-
-# register_booking response: new booking id in the bookings array
-_BOOK_201_PAYLOAD = {
-    "id": 999,
-    "bookings": [{"id": BOOKING_RAW["id"]}],
-}
 
 _BOOKING_FUTURE_PAYLOAD = {
     "count": 1,
@@ -86,11 +70,12 @@ _BOOKING_FUTURE_PAYLOAD = {
     "results": [BOOKING_RAW],
 }
 
-_PACKS_PAYLOAD = {
-    "count": 1,
-    "next": None,
-    "previous": None,
-    "results": [PACK_ACTIVE],
+_BOOK_SUCCESS_BODY = {
+    "offers_booked": [OFFER_RAW["id"]],
+    "offer_on_waiting_list": [],
+    "error_codes": [],
+    "buyable_item_error_code": None,
+    "extra_data": [],
 }
 
 
@@ -102,15 +87,25 @@ def _make_client(session: aiohttp.ClientSession) -> BsportClient:
 
 
 # ---------------------------------------------------------------------------
-# register_waitlist
+# register_waitlist  (→ POST /book/v1/offer/user_registration/)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_register_waitlist_success_201():
+async def test_register_waitlist_success_puts_offer_on_waitlist():
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
-            m.post(_WAITLIST_REGISTER_URL, status=201, payload={})
+            m.post(
+                _USER_REG_URL,
+                status=200,
+                payload={
+                    "offers_booked": [],
+                    "offer_on_waiting_list": [30362966],
+                    "error_codes": [],
+                    "buyable_item_error_code": None,
+                    "extra_data": [],
+                },
+            )
             client = _make_client(session)
             result = await client.register_waitlist(offer_id=30362966)
 
@@ -118,10 +113,22 @@ async def test_register_waitlist_success_201():
 
 
 @pytest.mark.asyncio
-async def test_register_waitlist_duplicate_423_is_idempotent_success():
+async def test_register_waitlist_offer_was_booked_also_success():
+    """Server may place the offer in offers_booked if a spot opened in the
+    gap between schedule poll and call; still a valid outcome."""
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
-            m.post(_WAITLIST_REGISTER_URL, status=423, body="")
+            m.post(
+                _USER_REG_URL,
+                status=200,
+                payload={
+                    "offers_booked": [30362966],
+                    "offer_on_waiting_list": [],
+                    "error_codes": [],
+                    "buyable_item_error_code": None,
+                    "extra_data": [],
+                },
+            )
             client = _make_client(session)
             result = await client.register_waitlist(offer_id=30362966)
 
@@ -129,98 +136,116 @@ async def test_register_waitlist_duplicate_423_is_idempotent_success():
 
 
 @pytest.mark.asyncio
-async def test_register_waitlist_other_4xx_raises_book_error():
+async def test_register_waitlist_error_code_raises():
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
-            m.post(_WAITLIST_REGISTER_URL, status=400, body='{"code": "SOME_ERROR"}')
+            m.post(
+                _USER_REG_URL,
+                status=200,
+                payload={
+                    "offers_booked": [],
+                    "offer_on_waiting_list": [],
+                    "error_codes": ["CANNOT_BOOK"],
+                    "buyable_item_error_code": None,
+                    "extra_data": [],
+                },
+            )
             client = _make_client(session)
             with pytest.raises(BsportBookError):
                 await client.register_waitlist(offer_id=30362966)
 
 
 # ---------------------------------------------------------------------------
-# book_offer
+# book_offer (→ compatible_with_offer_unfiltered + user_registration)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_book_offer_no_packs_raises_no_payment_pack():
+async def test_book_offer_no_compatible_packs_raises_no_payment_pack():
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
-            m.get(
-                _PACKS_URL,
-                status=200,
-                payload={"count": 0, "next": None, "previous": None, "results": []},
-            )
+            m.post(_COMPAT_PACKS_URL, status=200, payload=[])
             client = _make_client(session)
             with pytest.raises(BsportBookError) as exc_info:
-                await client.book_offer(offer_id=30362966)
+                await client.book_offer(offer_id=OFFER_RAW["id"])
 
     assert exc_info.value.reason == "no_payment_pack"
 
 
 @pytest.mark.asyncio
-async def test_book_offer_all_packs_423_raises_cannot_book():
+async def test_book_offer_success_returns_booking():
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
-            m.get(_PACKS_URL, status=200, payload=_PACKS_PAYLOAD)
-            m.post(_BOOK_PACK_URL, status=423, body="")
+            m.post(_COMPAT_PACKS_URL, status=200, payload=[PACK_ACTIVE])
+            m.post(_USER_REG_URL, status=200, payload=_BOOK_SUCCESS_BODY)
+            m.get(_BOOKINGS_FUTURE_URL, status=200, payload=_BOOKING_FUTURE_PAYLOAD)
+            client = _make_client(session)
+            booking = await client.book_offer(offer_id=OFFER_RAW["id"])
+
+    assert isinstance(booking, Booking)
+    assert booking.booking_id == BOOKING_RAW["id"]
+
+
+@pytest.mark.asyncio
+async def test_book_offer_class_full_got_waitlisted_raises_cannot_book():
+    """When user_registration routes the offer to offer_on_waiting_list
+    instead of offers_booked, the class was full. We explicitly called book,
+    not register_waitlist — surface that as cannot_book."""
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.post(_COMPAT_PACKS_URL, status=200, payload=[PACK_ACTIVE])
+            m.post(
+                _USER_REG_URL,
+                status=200,
+                payload={
+                    "offers_booked": [],
+                    "offer_on_waiting_list": [OFFER_RAW["id"]],
+                    "error_codes": [],
+                    "buyable_item_error_code": None,
+                    "extra_data": [],
+                },
+            )
             client = _make_client(session)
             with pytest.raises(BsportBookError) as exc_info:
-                await client.book_offer(offer_id=30362966)
+                await client.book_offer(offer_id=OFFER_RAW["id"])
 
     assert exc_info.value.reason == "cannot_book"
-    assert exc_info.value.status == 423
 
 
 @pytest.mark.asyncio
-async def test_book_offer_first_pack_201_returns_booking():
+async def test_book_offer_error_code_raises():
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
-            m.get(_PACKS_URL, status=200, payload=_PACKS_PAYLOAD)
-            m.post(_BOOK_PACK_URL, status=201, payload=_BOOK_201_PAYLOAD)
-            m.get(_BOOKINGS_FUTURE_URL, status=200, payload=_BOOKING_FUTURE_PAYLOAD)
+            m.post(_COMPAT_PACKS_URL, status=200, payload=[PACK_ACTIVE])
+            m.post(
+                _USER_REG_URL,
+                status=200,
+                payload={
+                    "offers_booked": [],
+                    "offer_on_waiting_list": [],
+                    "error_codes": ["OFFER_USER_ALREADY_BOOKED"],
+                    "buyable_item_error_code": None,
+                    "extra_data": [],
+                },
+            )
             client = _make_client(session)
-            booking = await client.book_offer(offer_id=30362966)
-
-    assert isinstance(booking, Booking)
-    assert booking.booking_id == BOOKING_RAW["id"]
-
-
-@pytest.mark.asyncio
-async def test_book_offer_first_pack_423_second_pack_201():
-    two_packs_payload = {
-        "count": 2,
-        "next": None,
-        "previous": None,
-        "results": [PACK_ACTIVE, PACK_ACTIVE_2],
-    }
-    async with aiohttp.ClientSession() as session:
-        with aioresponses() as m:
-            m.get(_PACKS_URL, status=200, payload=two_packs_payload)
-            m.post(_BOOK_PACK_URL, status=423, body="")
-            m.post(_BOOK_PACK_URL_2, status=201, payload=_BOOK_201_PAYLOAD)
-            m.get(_BOOKINGS_FUTURE_URL, status=200, payload=_BOOKING_FUTURE_PAYLOAD)
-            client = _make_client(session)
-            booking = await client.book_offer(offer_id=30362966)
-
-    assert isinstance(booking, Booking)
-    assert booking.booking_id == BOOKING_RAW["id"]
+            with pytest.raises(BsportBookError):
+                await client.book_offer(offer_id=OFFER_RAW["id"])
 
 
 @pytest.mark.asyncio
 async def test_book_offer_transient_5xx_retries_once():
-    """A 5xx on first attempt triggers a single retry that succeeds."""
+    """A 5xx on the user_registration call triggers a single retry."""
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
-            m.get(_PACKS_URL, status=200, payload=_PACKS_PAYLOAD)
+            m.post(_COMPAT_PACKS_URL, status=200, payload=[PACK_ACTIVE])
             # First attempt → 500
-            m.post(_BOOK_PACK_URL, status=500, body="server error")
-            # Retry → 201
-            m.post(_BOOK_PACK_URL, status=201, payload=_BOOK_201_PAYLOAD)
+            m.post(_USER_REG_URL, status=500, body="server error")
+            # Retry → 200 with success body
+            m.post(_USER_REG_URL, status=200, payload=_BOOK_SUCCESS_BODY)
             m.get(_BOOKINGS_FUTURE_URL, status=200, payload=_BOOKING_FUTURE_PAYLOAD)
             client = _make_client(session)
-            booking = await client.book_offer(offer_id=30362966)
+            booking = await client.book_offer(offer_id=OFFER_RAW["id"])
 
     assert isinstance(booking, Booking)
     assert booking.booking_id == BOOKING_RAW["id"]
@@ -276,7 +301,7 @@ async def test_write_methods_raise_transient_on_network_error():
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
             m.post(
-                _WAITLIST_REGISTER_URL,
+                _USER_REG_URL,
                 exception=aiohttp.ClientConnectionError("connection refused"),
             )
             client = _make_client(session)

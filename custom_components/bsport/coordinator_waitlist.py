@@ -1,9 +1,10 @@
 """WaitlistEntryCoordinator."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from homeassistant.core import HomeAssistant
@@ -55,6 +56,54 @@ def _select_cadence(start_at: datetime) -> object:
     return base + jitter
 
 
+_BATCH_CACHE_TTL = timedelta(seconds=5)
+
+
+class WaitlistBatchCache:
+    """Shared cache for `list_waitlists_with_positions` across per-offer coords.
+
+    Per-offer `WaitlistEntryCoordinator`s have their own adaptive cadence but
+    tend to tick in sync (same base interval, same class-time neighbourhood).
+    This cache coalesces concurrent ticks so N coordinators produce at most
+    one pair of HTTP requests per `_BATCH_CACHE_TTL` window. Stale data just
+    triggers a refresh on the next caller.
+
+    Not thread-safe by design — HA runs the event loop single-threaded, so
+    an asyncio.Lock is enough to serialize the refresh path.
+    """
+
+    def __init__(self, client: BsportClient) -> None:
+        self._client = client
+        self._lock = asyncio.Lock()
+        self._cache: tuple[WaitlistEntry, ...] | None = None
+        self._cache_at: datetime | None = None
+
+    async def get_entry(self, offer_id: int) -> WaitlistEntry | None:
+        entries = await self._refresh_if_stale()
+        return next(
+            (e for e in entries if e.offer.offer_id == offer_id), None,
+        )
+
+    def invalidate(self) -> None:
+        """Drop the cached snapshot so the next getter fetches fresh."""
+        self._cache = None
+        self._cache_at = None
+
+    async def _refresh_if_stale(self) -> tuple[WaitlistEntry, ...]:
+        async with self._lock:
+            now = datetime.now(timezone.utc)
+            fresh = (
+                self._cache is not None
+                and self._cache_at is not None
+                and (now - self._cache_at) <= _BATCH_CACHE_TTL
+            )
+            if fresh:
+                return self._cache  # type: ignore[return-value]
+            self._cache = await self._client.list_waitlists_with_positions()
+            self._cache_at = now
+            return self._cache
+
+
 class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
     """Tracks a single waitlist entry, adapts cadence, fires spot-open events."""
 
@@ -64,6 +113,7 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
         client: BsportClient,
         entry_id: str,
         initial: WaitlistEntry,
+        batch_cache: WaitlistBatchCache,
     ):
         self._initial = initial
         super().__init__(
@@ -73,12 +123,13 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
             update_interval=_select_cadence(initial.offer.start_at),
         )
         self._client = client
+        self._batch = batch_cache
         self.entry_id = entry_id
 
     async def _async_update_data(self) -> WaitlistEntry:
         try:
-            new_entry = await self._client.get_waitlist_entry(
-                offer_id=self._initial.offer.offer_id
+            new_entry = await self._batch.get_entry(
+                self._initial.offer.offer_id
             )
         except BsportAuthError as err:
             self.hass.bus.async_fire(
@@ -186,6 +237,8 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
         entry = self.data if self.data is not None else self._initial
         offer = entry.offer
         await self._client.discard_waitlist(entry.entry_id)
+        # Invalidate the shared cache so the next poll observes the drop.
+        self._batch.invalidate()
         self.hass.bus.async_fire(
             EVENT_WAITLIST_DISCARDED,
             {

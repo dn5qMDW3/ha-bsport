@@ -86,8 +86,8 @@ async def test_waitlist_sensors_created_per_entry(hass: HomeAssistant):
         "custom_components.bsport.api.client.BsportClient.get_account_overview",
         new=AsyncMock(return_value=overview),
     ), patch(
-        "custom_components.bsport.api.client.BsportClient.get_waitlist_entry",
-        new=AsyncMock(return_value=waitlist),
+        "custom_components.bsport.api.client.BsportClient.list_waitlists_with_positions",
+        new=AsyncMock(return_value=(waitlist,)),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()

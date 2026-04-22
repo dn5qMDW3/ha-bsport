@@ -14,18 +14,16 @@ from custom_components.bsport.const import BSPORT_API_BASE
 
 @pytest.mark.asyncio
 async def test_429_on_book_sets_pause_and_raises_rate_limited():
-    pack_list_url = f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack/"
+    compat_url = (
+        f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack/"
+        f"compatible_with_offer_unfiltered/?mine=true"
+    )
+    user_reg_url = f"{BSPORT_API_BASE}/book/v1/offer/user_registration/"
     async with aiohttp.ClientSession() as session:
         with aioresponses() as m:
-            m.get(pack_list_url, status=200, payload=[
-                {
-                    "id": 1, "disabled": False, "reverted": False,
-                    "starting_date": "2020-01-01",
-                    "ending_date": "2999-01-01",
-                },
-            ])
+            m.post(compat_url, status=200, payload=[{"id": 1}])
             m.post(
-                f"{BSPORT_API_BASE}/buyable/v1/payment-pack/consumer-payment-pack/1/register_booking/",
+                user_reg_url,
                 status=429,
                 headers={"Retry-After": "0.05"},
                 body="",

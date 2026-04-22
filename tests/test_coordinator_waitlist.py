@@ -20,9 +20,22 @@ from custom_components.bsport.const import (
     WAITLIST_INTERVAL_UNDER_2H,
 )
 from custom_components.bsport.coordinator_waitlist import (
+    WaitlistBatchCache,
     WaitlistEntryCoordinator,
     _select_cadence,
 )
+
+
+def _fake_batch(entry: WaitlistEntry | None) -> WaitlistBatchCache:
+    """Return a WaitlistBatchCache-shaped mock that serves `entry` by offer_id.
+
+    The real cache does the HTTP fan-in; tests don't exercise that path —
+    they just need `get_entry(offer_id)` to return a canned response.
+    """
+    cache = AsyncMock(spec=WaitlistBatchCache)
+    cache.get_entry = AsyncMock(return_value=entry)
+    cache.invalidate = lambda: None
+    return cache
 
 
 def _make_offer(start_delta: timedelta, *, offer_id: int = 42) -> Offer:
@@ -57,6 +70,49 @@ def _entry(
 
 
 # ── cadence tests ────────────────────────────────────────────────────────────
+
+
+# ── batch cache coalescing ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_batch_cache_coalesces_concurrent_lookups():
+    """Multiple concurrent get_entry() calls share a single client fetch.
+
+    This is the whole point of the cache: when N per-offer coordinators tick
+    in sync, we make 1 pair of HTTP requests, not N.
+    """
+    import asyncio as _aio
+    client = AsyncMock(spec=BsportClient)
+    e1 = _entry(timedelta(hours=3), offer_id=1)
+    e2 = _entry(timedelta(hours=3), offer_id=2)
+    e3 = _entry(timedelta(hours=3), offer_id=3)
+    client.list_waitlists_with_positions = AsyncMock(return_value=(e1, e2, e3))
+
+    cache = WaitlistBatchCache(client)
+    # Three concurrent lookups — should fold into one underlying fetch.
+    r1, r2, r3 = await _aio.gather(
+        cache.get_entry(1), cache.get_entry(2), cache.get_entry(3),
+    )
+
+    assert r1.offer.offer_id == 1
+    assert r2.offer.offer_id == 2
+    assert r3.offer.offer_id == 3
+    assert client.list_waitlists_with_positions.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_batch_cache_invalidate_forces_refetch():
+    client = AsyncMock(spec=BsportClient)
+    e1 = _entry(timedelta(hours=3), offer_id=1)
+    client.list_waitlists_with_positions = AsyncMock(return_value=(e1,))
+
+    cache = WaitlistBatchCache(client)
+    await cache.get_entry(1)
+    cache.invalidate()
+    await cache.get_entry(1)
+
+    assert client.list_waitlists_with_positions.await_count == 2
 
 
 def test_cadence_under_2h():
@@ -94,9 +150,11 @@ async def test_status_transition_fires_spot_open(hass: HomeAssistant):
     client = AsyncMock(spec=BsportClient)
     waiting = _entry(timedelta(hours=3), status="waiting", position=3)
     convertible = _entry(timedelta(hours=3), status="convertible", position=1)
-    client.get_waitlist_entry = AsyncMock(return_value=convertible)
 
-    coord = WaitlistEntryCoordinator(hass, client, "e1", initial=waiting)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=waiting,
+        batch_cache=_fake_batch(convertible),
+    )
     coord.data = waiting  # fake prior state
 
     events: list = []
@@ -123,9 +181,10 @@ async def test_async_book_success_fires_event(hass: HomeAssistant):
     booking = Booking(booking_id=1, offer=offer, status="confirmed")
     client.book_offer = AsyncMock(return_value=booking)
     # async_request_refresh will call _async_update_data; avoid infinite loop
-    client.get_waitlist_entry = AsyncMock(return_value=initial)
-
-    coord = WaitlistEntryCoordinator(hass, client, "e1", initial=initial)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=initial,
+        batch_cache=_fake_batch(initial),
+    )
     coord.data = initial
 
     events: list = []
@@ -152,7 +211,10 @@ async def test_async_book_failure_fires_failed_event(hass: HomeAssistant):
         )
     )
 
-    coord = WaitlistEntryCoordinator(hass, client, "e1", initial=initial)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=initial,
+        batch_cache=_fake_batch(initial),
+    )
 
     events: list = []
     hass.bus.async_listen("bsport_book_failed", lambda e: events.append(e))
@@ -187,9 +249,11 @@ async def test_convertible_cannot_book_triggers_discard_and_retry(
         ]
     )
     client.discard_waitlist = AsyncMock(return_value=None)
-    client.get_waitlist_entry = AsyncMock(return_value=convertible)
 
-    coord = WaitlistEntryCoordinator(hass, client, "e1", initial=convertible)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=convertible,
+        batch_cache=_fake_batch(convertible),
+    )
     coord.data = convertible  # enables the convertible-state guard
 
     succeeded: list = []
@@ -222,7 +286,10 @@ async def test_convertible_cannot_book_discard_also_fails_raises_original(
         side_effect=BsportBookError(reason="unknown_client_error", status=500, raw_body="")
     )
 
-    coord = WaitlistEntryCoordinator(hass, client, "e1", initial=convertible)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=convertible,
+        batch_cache=_fake_batch(convertible),
+    )
     coord.data = convertible
 
     events: list = []
@@ -250,7 +317,10 @@ async def test_waiting_state_cannot_book_does_not_discard(hass: HomeAssistant):
     )
     client.discard_waitlist = AsyncMock(return_value=None)
 
-    coord = WaitlistEntryCoordinator(hass, client, "e1", initial=waiting)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=waiting,
+        batch_cache=_fake_batch(waiting),
+    )
     coord.data = waiting
 
     with pytest.raises(BsportBookError):

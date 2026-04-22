@@ -37,7 +37,11 @@ def _entry_with_runtime(hass: HomeAssistant) -> MockConfigEntry:
     # Attach a minimal runtime so async_step_add_watch can reach client
     client = AsyncMock()
     overview = MagicMock()
-    runtime = BsportRuntimeData(client=client, overview=overview)
+    from custom_components.bsport.coordinator_waitlist import WaitlistBatchCache
+    runtime = BsportRuntimeData(
+        client=client, overview=overview,
+        waitlist_cache=WaitlistBatchCache(client),
+    )
     entry.runtime_data = runtime
     return entry
 
