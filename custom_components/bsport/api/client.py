@@ -370,6 +370,23 @@ class BsportClient:
         bsport_code = (body or {}).get("code") if isinstance(body, dict) else None
         raise normalize_book_error(bsport_code, status=status, raw_body=text)
 
+    async def discard_waitlist(self, waitlist_entry_id: int) -> None:
+        """Remove the authenticated user from the waitlist entry.
+
+        `waitlist_entry_id` is the `id` field on a `/waiting-list/booking-option/`
+        record — not the offer id. 200 → success. 404 → treated as idempotent
+        success (entry already gone).
+        """
+        await self._wait_if_paused()
+        url = self._bsport_url(
+            f"/api-v0/waiting-list/booking-option/{waitlist_entry_id}/discard/"
+        )
+        status, text, body = await self._post_json(url, json_body={})
+        if status in (200, 204, 404):
+            return None
+        bsport_code = (body or {}).get("code") if isinstance(body, dict) else None
+        raise normalize_book_error(bsport_code, status=status, raw_body=text)
+
     async def book_offer(self, offer_id: int) -> Booking:
         """Book *offer_id* using the first available active payment pack.
 

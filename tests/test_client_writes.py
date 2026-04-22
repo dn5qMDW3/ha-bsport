@@ -282,3 +282,50 @@ async def test_write_methods_raise_transient_on_network_error():
             client = _make_client(session)
             with pytest.raises(BsportTransientError):
                 await client.register_waitlist(offer_id=30362966)
+
+
+# ---------------------------------------------------------------------------
+# discard_waitlist
+# ---------------------------------------------------------------------------
+
+
+_WAITLIST_DISCARD_URL = (
+    f"{BSPORT_API_BASE}/api-v0/waiting-list/booking-option/6549244/discard/"
+)
+
+
+@pytest.mark.asyncio
+async def test_discard_waitlist_200_returns_none():
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.post(_WAITLIST_DISCARD_URL, status=200, payload={"id": 6549244})
+            client = _make_client(session)
+            result = await client.discard_waitlist(waitlist_entry_id=6549244)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_discard_waitlist_404_is_idempotent_success():
+    """If the entry is already gone, treat it as success."""
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.post(_WAITLIST_DISCARD_URL, status=404, body="")
+            client = _make_client(session)
+            result = await client.discard_waitlist(waitlist_entry_id=6549244)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_discard_waitlist_4xx_raises():
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.post(
+                _WAITLIST_DISCARD_URL,
+                status=400,
+                body='{"code": "SOME_ERROR"}',
+            )
+            client = _make_client(session)
+            with pytest.raises(BsportBookError):
+                await client.discard_waitlist(waitlist_entry_id=6549244)

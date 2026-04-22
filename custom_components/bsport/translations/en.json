@@ -77,17 +77,19 @@
       "watch_opens_at":    { "name": "Registration opens" }
     },
     "button": {
-      "waitlist_book": { "name": "Book" },
-      "watch_book":    { "name": "Book" }
+      "waitlist_book":    { "name": "Book" },
+      "waitlist_discard": { "name": "Leave waitlist" },
+      "watch_book":       { "name": "Book" }
     },
     "calendar": {
       "bookings": { "name": "Bookings" }
     }
   },
   "services": {
-    "book_offer":     { "name": "Book offer",     "description": "Book a bsport offer." },
-    "cancel_booking": { "name": "Cancel booking", "description": "Cancel a confirmed booking." },
-    "watch_class":    { "name": "Watch class",    "description": "Add a class to the watch list." },
-    "unwatch_class":  { "name": "Unwatch class",  "description": "Remove a class from the watch list." }
+    "book_offer":       { "name": "Book offer",       "description": "Book a bsport offer." },
+    "cancel_booking":   { "name": "Cancel booking",   "description": "Cancel a confirmed booking." },
+    "watch_class":      { "name": "Watch class",      "description": "Add a class to the watch list." },
+    "unwatch_class":    { "name": "Unwatch class",    "description": "Remove a class from the watch list." },
+    "discard_waitlist": { "name": "Leave waitlist",   "description": "Remove yourself from the waiting list for a class." }
   }
 }

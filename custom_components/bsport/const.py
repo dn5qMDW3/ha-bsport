@@ -32,6 +32,7 @@ EVENT_CLASS_BOOKABLE: Final = "bsport_class_bookable"
 EVENT_BOOK_SUCCEEDED: Final = "bsport_book_succeeded"
 EVENT_BOOK_FAILED: Final = "bsport_book_failed"
 EVENT_AUTH_FAILED: Final = "bsport_auth_failed"
+EVENT_WAITLIST_DISCARDED: Final = "bsport_waitlist_discarded"
 
 # Config entry keys (entry.data)
 CONF_EMAIL: Final = "email"

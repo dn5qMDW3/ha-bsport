@@ -148,6 +148,42 @@ async def test_watch_class_service_updates_options(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
+async def test_discard_waitlist_service_dispatches_to_coordinator(hass: HomeAssistant):
+    """discard_waitlist looks up the per-offer coordinator and calls async_discard."""
+    async_register_services(hass)
+    entry, _ = _build_entry_with_runtime(hass)
+
+    # Install a fake waitlist coordinator keyed by offer_id.
+    fake_coord = MagicMock()
+    fake_coord.async_discard = AsyncMock(return_value=None)
+    entry.runtime_data.waitlists[42] = fake_coord
+
+    await hass.services.async_call(
+        DOMAIN,
+        "discard_waitlist",
+        {"entry_id": entry.entry_id, "offer_id": 42},
+        blocking=True,
+    )
+
+    fake_coord.async_discard.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_discard_waitlist_service_unknown_offer_raises(hass: HomeAssistant):
+    """If no waitlist coordinator exists for the offer, the service errors."""
+    async_register_services(hass)
+    entry, _ = _build_entry_with_runtime(hass)
+
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            DOMAIN,
+            "discard_waitlist",
+            {"entry_id": entry.entry_id, "offer_id": 9999},
+            blocking=True,
+        )
+
+
+@pytest.mark.asyncio
 async def test_simulate_spot_open_fires_event(hass: HomeAssistant):
     async_register_services(hass)
     entry, _ = _build_entry_with_runtime(hass)

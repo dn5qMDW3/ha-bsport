@@ -8,6 +8,7 @@ from pathlib import Path
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import (
@@ -154,6 +155,15 @@ async def async_setup_entry(
 
     await _reconcile_child_coordinators(hass, entry)
 
+    # Clean up orphan devices left by earlier versions of the integration
+    # that retired coordinators without removing their device entries.
+    _sweep_orphaned_child_devices(
+        hass,
+        entry,
+        live_waitlists=set(runtime.waitlists),
+        live_watches=set(runtime.watches),
+    )
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     entry.async_on_unload(
@@ -217,6 +227,58 @@ async def _async_reload_entry(
     await hass.config_entries.async_reload(entry.entry_id)
 
 
+def _remove_child_device(
+    hass: HomeAssistant,
+    entry: BsportConfigEntry,
+    kind: str,
+    offer_id: int,
+) -> None:
+    """Remove a per-waitlist / per-watch device and its entities from HA.
+
+    The identifier scheme matches `_waitlist_device` / `_watch_device` in
+    sensor.py. Cascades to entities automatically via the registry.
+    """
+    registry = dr.async_get(hass)
+    identifier = f"{entry.entry_id}_{kind}_{offer_id}"
+    device = registry.async_get_device(identifiers={(DOMAIN, identifier)})
+    if device is not None:
+        registry.async_remove_device(device.id)
+
+
+def _sweep_orphaned_child_devices(
+    hass: HomeAssistant,
+    entry: BsportConfigEntry,
+    *,
+    live_waitlists: set[int],
+    live_watches: set[int],
+) -> None:
+    """Remove any `waitlist_<id>` / `watch_<id>` devices that no longer
+    correspond to a live coordinator — catches orphans created before the
+    reconcile loop learned to clean up after itself."""
+    registry = dr.async_get(hass)
+    prefix = f"{entry.entry_id}_"
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        for domain, ident in device.identifiers:
+            if domain != DOMAIN or not ident.startswith(prefix):
+                continue
+            rest = ident[len(prefix):]
+            if rest.startswith("waitlist_"):
+                try:
+                    oid = int(rest[len("waitlist_"):])
+                except ValueError:
+                    continue
+                if oid not in live_waitlists:
+                    registry.async_remove_device(device.id)
+            elif rest.startswith("watch_"):
+                try:
+                    oid = int(rest[len("watch_"):])
+                except ValueError:
+                    continue
+                if oid not in live_watches:
+                    registry.async_remove_device(device.id)
+            # Hub device (no suffix) is always kept while the entry exists.
+
+
 async def _reconcile_child_coordinators(
     hass: HomeAssistant, entry: BsportConfigEntry
 ) -> None:
@@ -231,6 +293,7 @@ async def _reconcile_child_coordinators(
     for dead_id in list(runtime.waitlists):
         if dead_id not in live_ids:
             await runtime.waitlists.pop(dead_id).async_shutdown()
+            _remove_child_device(hass, entry, "waitlist", dead_id)
     for entry_obj in overview.waitlists:
         oid = entry_obj.offer.offer_id
         if oid not in runtime.waitlists:
@@ -246,6 +309,7 @@ async def _reconcile_child_coordinators(
     for dead_id in list(runtime.watches):
         if dead_id not in desired_watches:
             await runtime.watches.pop(dead_id).async_shutdown()
+            _remove_child_device(hass, entry, "watch", dead_id)
     for offer_id in desired_watches:
         if offer_id in runtime.watches:
             continue

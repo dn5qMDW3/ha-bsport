@@ -89,3 +89,48 @@ async def test_waitlist_book_button_press_calls_async_book(hass: HomeAssistant):
     await hass.async_block_till_done()
 
     book_mock.assert_called_once_with(source="waitlist")
+
+
+@pytest.mark.asyncio
+async def test_waitlist_discard_button_press_calls_async_discard(hass: HomeAssistant):
+    offer = _offer()
+    waitlist = WaitlistEntry(
+        entry_id=6521868, offer=offer, status="waiting", position=3,
+    )
+    overview = AccountOverview(
+        waitlists=(waitlist,), bookings=(), active_pass=None, membership=None,
+    )
+    entry = _entry(hass)
+    discard_mock = AsyncMock(return_value=None)
+
+    with patch(
+        "custom_components.bsport.api.client.BsportClient.authenticate",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "custom_components.bsport.api.client.BsportClient.get_account_overview",
+        new=AsyncMock(return_value=overview),
+    ), patch(
+        "custom_components.bsport.api.client.BsportClient.get_waitlist_entry",
+        new=AsyncMock(return_value=waitlist),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    ent_reg = er.async_get(hass)
+    expected_uid = f"{DOMAIN}_{entry.entry_id}_waitlist_discard_{offer.offer_id}"
+    button_entries = [e for e in ent_reg.entities.values() if e.unique_id == expected_uid]
+    assert button_entries, (
+        f"discard button unique_id {expected_uid!r} not found"
+    )
+
+    runtime = entry.runtime_data
+    wl_coord = list(runtime.waitlists.values())[0]
+    wl_coord.async_discard = discard_mock
+
+    entity_id = button_entries[0].entity_id
+    await hass.services.async_call(
+        "button", "press", {"entity_id": entity_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    discard_mock.assert_awaited_once()

@@ -77,17 +77,19 @@
       "watch_opens_at":    { "name": "Ouverture des inscriptions" }
     },
     "button": {
-      "waitlist_book": { "name": "Réserver" },
-      "watch_book":    { "name": "Réserver" }
+      "waitlist_book":    { "name": "Réserver" },
+      "waitlist_discard": { "name": "Quitter la liste d'attente" },
+      "watch_book":       { "name": "Réserver" }
     },
     "calendar": {
       "bookings": { "name": "Réservations" }
     }
   },
   "services": {
-    "book_offer":     { "name": "Réserver un cours",        "description": "Réserver un cours bsport." },
-    "cancel_booking": { "name": "Annuler une réservation",  "description": "Annuler une réservation confirmée." },
-    "watch_class":    { "name": "Surveiller un cours",      "description": "Ajouter un cours à la liste de surveillance." },
-    "unwatch_class":  { "name": "Ne plus surveiller",       "description": "Retirer un cours de la liste de surveillance." }
+    "book_offer":       { "name": "Réserver un cours",        "description": "Réserver un cours bsport." },
+    "cancel_booking":   { "name": "Annuler une réservation",  "description": "Annuler une réservation confirmée." },
+    "watch_class":      { "name": "Surveiller un cours",      "description": "Ajouter un cours à la liste de surveillance." },
+    "unwatch_class":    { "name": "Ne plus surveiller",       "description": "Retirer un cours de la liste de surveillance." },
+    "discard_waitlist": { "name": "Quitter la liste d'attente","description": "Se retirer de la liste d'attente d'un cours." }
   }
 }

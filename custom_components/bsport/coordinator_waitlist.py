@@ -26,6 +26,7 @@ from .const import (
     EVENT_BOOK_FAILED,
     EVENT_BOOK_SUCCEEDED,
     EVENT_SPOT_OPEN,
+    EVENT_WAITLIST_DISCARDED,
     SCAN_JITTER_RATIO,
     WAITLIST_INTERVAL_BEYOND_24H,
     WAITLIST_INTERVAL_UNDER_24H,
@@ -145,6 +146,21 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
             },
         )
         await self.async_request_refresh()
+
+    async def async_discard(self) -> None:
+        """Leave the waitlist queue for this offer."""
+        entry = self.data if self.data is not None else self._initial
+        offer = entry.offer
+        await self._client.discard_waitlist(entry.entry_id)
+        self.hass.bus.async_fire(
+            EVENT_WAITLIST_DISCARDED,
+            {
+                "entry_id": self.entry_id,
+                "offer_id": offer.offer_id,
+                "class_name": offer.class_name,
+                "start_at": offer.start_at.isoformat(),
+            },
+        )
 
     def _client_email(self) -> str:
         return getattr(self._client, "_email", "")  # noqa: SLF001

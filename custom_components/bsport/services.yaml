@@ -30,6 +30,12 @@ unwatch_class:
   fields:
     entry_id: { name: Config entry, required: true, selector: { text: {} } }
     offer_id: { name: Offer ID, required: true, selector: { number: { min: 1, mode: box } } }
+discard_waitlist:
+  name: Leave waitlist
+  description: Remove yourself from the waiting list for a class.
+  fields:
+    entry_id: { name: Config entry, required: true, selector: { text: {} } }
+    offer_id: { name: Offer ID, required: true, selector: { number: { min: 1, mode: box } } }
 simulate_spot_open:
   name: Simulate spot-open event
   description: >-

@@ -22,6 +22,7 @@ async def async_setup_entry(
     entities: list[ButtonEntity] = []
     for coord in runtime.waitlists.values():
         entities.append(WaitlistBookButton(coord, entry))
+        entities.append(WaitlistDiscardButton(coord, entry))
     for coord in runtime.watches.values():
         entities.append(WatchBookButton(coord, entry))
     async_add_entities(entities)
@@ -51,6 +52,35 @@ class WaitlistBookButton(
 
     async def async_press(self) -> None:
         await self.coordinator.async_book(source="waitlist")
+
+
+class WaitlistDiscardButton(
+    CoordinatorEntity[WaitlistEntryCoordinator], ButtonEntity
+):
+    """Leave the waitlist for this class."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "waitlist_discard"
+
+    def __init__(self, coord: WaitlistEntryCoordinator, entry: BsportConfigEntry) -> None:
+        super().__init__(coord)
+        offer = (coord.data.offer if coord.data else coord._initial.offer)  # noqa: SLF001
+        self._attr_unique_id = (
+            f"{DOMAIN}_{entry.entry_id}_waitlist_discard_{offer.offer_id}"
+        )
+        self._attr_device_info = _waitlist_device(
+            entry, offer.offer_id, offer.class_name
+        )
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_discard()
+        # Refresh the overview so reconcile retires this coordinator and
+        # its device/entities disappear without a full integration reload.
+        entry = self.coordinator.hass.config_entries.async_get_entry(
+            self.coordinator.entry_id
+        )
+        if entry is not None and hasattr(entry, "runtime_data"):
+            await entry.runtime_data.overview.async_request_refresh()
 
 
 class WatchBookButton(

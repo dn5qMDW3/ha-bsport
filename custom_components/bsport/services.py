@@ -61,6 +61,23 @@ async def _cancel_booking(call: ServiceCall) -> None:
     await runtime.overview.async_request_refresh()
 
 
+async def _discard_waitlist(call: ServiceCall) -> None:
+    entry, runtime = _resolve_entry(call.hass, call.data["entry_id"])
+    offer_id = int(call.data["offer_id"])
+    coord = runtime.waitlists.get(offer_id)
+    if coord is None:
+        raise HomeAssistantError(
+            f"no waitlist entry for offer {offer_id} on this bsport account"
+        )
+    try:
+        await coord.async_discard()
+    except BsportError as err:
+        raise HomeAssistantError(str(err)) from err
+    # Refresh the overview; the reconcile listener removes the coordinator
+    # and its device registry entry once the discarded entry disappears.
+    await runtime.overview.async_request_refresh()
+
+
 async def _watch_class(call: ServiceCall) -> None:
     entry, _runtime = _resolve_entry(call.hass, call.data["entry_id"])
     current = list(entry.options.get(OPT_WATCHED_OFFER_IDS, []))
@@ -137,6 +154,9 @@ def async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, "unwatch_class", _unwatch_class, schema=_WATCH_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "discard_waitlist", _discard_waitlist, schema=_BOOK_SCHEMA
     )
     hass.services.async_register(
         DOMAIN, "simulate_spot_open", _simulate_spot_open, schema=_SIMULATE_SCHEMA
