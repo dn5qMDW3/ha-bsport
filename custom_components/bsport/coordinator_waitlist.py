@@ -118,23 +118,43 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
     async def async_book(
         self, *, source: Literal["waitlist", "watch", "service"]
     ) -> None:
-        """Attempt to book the waitlist offer."""
-        offer = self._initial.offer
+        """Attempt to book the waitlist offer.
+
+        bsport has no documented "convert waitlist → booking" endpoint. When
+        the spot is convertible, the class is still marked full on the
+        schedule because the open spot is held by the waitlist reservation,
+        so `book_offer` returns 423 `cannot_book`. Workaround: when the
+        coordinator sees we're in `convertible` state, drop the waitlist
+        entry to release the held spot, then retry the book. Only runs once;
+        a second failure is reported as-is.
+        """
+        entry = self.data if self.data is not None else self._initial
+        offer = entry.offer
         offer_id = offer.offer_id
         try:
             await self._client.book_offer(offer_id)
         except BsportBookError as err:
-            self.hass.bus.async_fire(
-                EVENT_BOOK_FAILED,
-                {
-                    "entry_id": self.entry_id,
-                    "offer_id": offer_id,
-                    "class_name": offer.class_name,
-                    "reason": err.reason,
-                    "source": source,
-                },
+            can_retry = (
+                err.reason == "cannot_book"
+                and self.data is not None
+                and self.data.status == "convertible"
             )
-            raise
+            if can_retry:
+                try:
+                    await self._client.discard_waitlist(entry.entry_id)
+                except BsportBookError:
+                    # Couldn't drop the reservation — surface the original
+                    # book error rather than hide it behind a new one.
+                    self._fire_book_failed(offer, source, err.reason)
+                    raise err
+                try:
+                    await self._client.book_offer(offer_id)
+                except BsportBookError as err2:
+                    self._fire_book_failed(offer, source, err2.reason)
+                    raise
+            else:
+                self._fire_book_failed(offer, source, err.reason)
+                raise
         self.hass.bus.async_fire(
             EVENT_BOOK_SUCCEEDED,
             {
@@ -146,6 +166,20 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
             },
         )
         await self.async_request_refresh()
+
+    def _fire_book_failed(
+        self, offer, source: str, reason: str,
+    ) -> None:
+        self.hass.bus.async_fire(
+            EVENT_BOOK_FAILED,
+            {
+                "entry_id": self.entry_id,
+                "offer_id": offer.offer_id,
+                "class_name": offer.class_name,
+                "reason": reason,
+                "source": source,
+            },
+        )
 
     async def async_discard(self) -> None:
         """Leave the waitlist queue for this offer."""

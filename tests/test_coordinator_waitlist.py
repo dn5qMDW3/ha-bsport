@@ -164,3 +164,97 @@ async def test_async_book_failure_fires_failed_event(hass: HomeAssistant):
     assert len(events) == 1
     assert events[0].data["reason"] == "cannot_book"
     assert events[0].data["source"] == "service"
+
+
+# ── convertible fallback: discard then re-book ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_convertible_cannot_book_triggers_discard_and_retry(
+    hass: HomeAssistant,
+):
+    """When the server still marks the class full while our waitlist is
+    convertible, the coordinator discards the waitlist reservation and
+    retries the normal booking."""
+    client = AsyncMock(spec=BsportClient)
+    convertible = _entry(timedelta(hours=3), status="convertible", position=1)
+    # First book_offer call fails with cannot_book, second succeeds.
+    booking = Booking(booking_id=77, offer=convertible.offer, status="confirmed")
+    client.book_offer = AsyncMock(
+        side_effect=[
+            BsportBookError(reason="cannot_book", status=423, raw_body=""),
+            booking,
+        ]
+    )
+    client.discard_waitlist = AsyncMock(return_value=None)
+    client.get_waitlist_entry = AsyncMock(return_value=convertible)
+
+    coord = WaitlistEntryCoordinator(hass, client, "e1", initial=convertible)
+    coord.data = convertible  # enables the convertible-state guard
+
+    succeeded: list = []
+    failed: list = []
+    hass.bus.async_listen("bsport_book_succeeded", lambda e: succeeded.append(e))
+    hass.bus.async_listen("bsport_book_failed", lambda e: failed.append(e))
+
+    await coord.async_book(source="waitlist")
+    await hass.async_block_till_done()
+
+    client.discard_waitlist.assert_awaited_once_with(convertible.entry_id)
+    assert client.book_offer.await_count == 2
+    assert len(succeeded) == 1
+    assert not failed
+
+
+@pytest.mark.asyncio
+async def test_convertible_cannot_book_discard_also_fails_raises_original(
+    hass: HomeAssistant,
+):
+    """If the discard step fails, don't retry — surface the original book
+    error so the user still sees something actionable and no waitlist spot
+    is lost."""
+    client = AsyncMock(spec=BsportClient)
+    convertible = _entry(timedelta(hours=3), status="convertible", position=1)
+    client.book_offer = AsyncMock(
+        side_effect=BsportBookError(reason="cannot_book", status=423, raw_body="")
+    )
+    client.discard_waitlist = AsyncMock(
+        side_effect=BsportBookError(reason="unknown_client_error", status=500, raw_body="")
+    )
+
+    coord = WaitlistEntryCoordinator(hass, client, "e1", initial=convertible)
+    coord.data = convertible
+
+    events: list = []
+    hass.bus.async_listen("bsport_book_failed", lambda e: events.append(e))
+
+    with pytest.raises(BsportBookError) as exc_info:
+        await coord.async_book(source="waitlist")
+    await hass.async_block_till_done()
+
+    # Only the original cannot_book error surfaces — not the discard failure.
+    assert exc_info.value.reason == "cannot_book"
+    assert client.book_offer.await_count == 1  # no retry
+    assert len(events) == 1
+    assert events[0].data["reason"] == "cannot_book"
+
+
+@pytest.mark.asyncio
+async def test_waiting_state_cannot_book_does_not_discard(hass: HomeAssistant):
+    """The discard+book fallback must NOT fire while still in `waiting` —
+    that would throw away a queue position for no reason."""
+    client = AsyncMock(spec=BsportClient)
+    waiting = _entry(timedelta(hours=3), status="waiting", position=3)
+    client.book_offer = AsyncMock(
+        side_effect=BsportBookError(reason="cannot_book", status=423, raw_body="")
+    )
+    client.discard_waitlist = AsyncMock(return_value=None)
+
+    coord = WaitlistEntryCoordinator(hass, client, "e1", initial=waiting)
+    coord.data = waiting
+
+    with pytest.raises(BsportBookError):
+        await coord.async_book(source="service")
+
+    client.discard_waitlist.assert_not_awaited()
+    assert client.book_offer.await_count == 1
