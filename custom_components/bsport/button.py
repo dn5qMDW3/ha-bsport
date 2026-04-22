@@ -50,6 +50,15 @@ class WaitlistBookButton(
         data = self.coordinator.data
         return data.offer.cover_url if data else None
 
+    @property
+    def available(self) -> bool:
+        data = self.coordinator.data
+        return (
+            super().available
+            and data is not None
+            and data.status == "convertible"
+        )
+
     async def async_press(self) -> None:
         await self.coordinator.async_book(source="waitlist")
 

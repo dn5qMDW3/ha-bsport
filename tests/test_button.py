@@ -92,6 +92,40 @@ async def test_waitlist_book_button_press_calls_async_book(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
+async def test_waitlist_book_button_unavailable_when_not_convertible(hass: HomeAssistant):
+    offer = _offer()
+    waitlist = WaitlistEntry(
+        entry_id=6521868, offer=offer, status="waiting", position=3,
+    )
+    overview = AccountOverview(
+        waitlists=(waitlist,), bookings=(), active_pass=None, membership=None,
+    )
+    entry = _entry(hass)
+
+    with patch(
+        "custom_components.bsport.api.client.BsportClient.authenticate",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "custom_components.bsport.api.client.BsportClient.get_account_overview",
+        new=AsyncMock(return_value=overview),
+    ), patch(
+        "custom_components.bsport.api.client.BsportClient.list_waitlists_with_positions",
+        new=AsyncMock(return_value=(waitlist,)),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    ent_reg = er.async_get(hass)
+    expected_uid = f"{DOMAIN}_{entry.entry_id}_waitlist_book_{offer.offer_id}"
+    button_entries = [e for e in ent_reg.entities.values() if e.unique_id == expected_uid]
+    assert button_entries
+    entity_id = button_entries[0].entity_id
+
+    state = hass.states.get(entity_id)
+    assert state is not None and state.state == "unavailable"
+
+
+@pytest.mark.asyncio
 async def test_waitlist_discard_button_press_calls_async_discard(hass: HomeAssistant):
     offer = _offer()
     waitlist = WaitlistEntry(
