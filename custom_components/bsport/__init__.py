@@ -307,7 +307,12 @@ async def _reconcile_child_coordinators(
                 initial=entry_obj,
                 batch_cache=runtime.waitlist_cache,
             )
-            await coord.async_config_entry_first_refresh()
+            # async_refresh (not async_config_entry_first_refresh) because
+            # reconcile runs both during SETUP_IN_PROGRESS (initial load)
+            # and later when the overview listener fires with state=LOADED;
+            # the latter rejects async_config_entry_first_refresh. Fetch
+            # failure falls back to _initial data in sensors/buttons.
+            await coord.async_refresh()
             runtime.waitlists[oid] = coord
 
     # Watch coordinators
@@ -336,5 +341,5 @@ async def _reconcile_child_coordinators(
             hass, runtime.client, entry_id=entry.entry_id,
             studio_id=entry.data[CONF_STUDIO_ID], initial_offer=offer,
         )
-        await coord.async_config_entry_first_refresh()
+        await coord.async_refresh()
         runtime.watches[offer_id] = coord
