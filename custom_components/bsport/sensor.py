@@ -363,3 +363,6 @@ async def async_setup_entry(
         entities.append(WatchOpensAtSensor(w_coord, entry, offer_id, class_name))
 
     async_add_entities(entities)
+    # Expose the callback so the reconciler can spawn per-child sensors when
+    # new waitlist/watch coordinators appear after initial setup.
+    runtime.add_sensor_entities = async_add_entities

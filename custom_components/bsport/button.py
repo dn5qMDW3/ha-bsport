@@ -26,6 +26,9 @@ async def async_setup_entry(
     for coord in runtime.watches.values():
         entities.append(WatchBookButton(coord, entry))
     async_add_entities(entities)
+    # Expose the callback so the reconciler can spawn per-child buttons when
+    # new waitlist/watch coordinators appear after initial setup.
+    runtime.add_button_entities = async_add_entities
 
 
 class WaitlistBookButton(

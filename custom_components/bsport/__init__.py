@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import (
     BsportAuthError,
@@ -38,6 +39,10 @@ class BsportRuntimeData:
     waitlist_cache: WaitlistBatchCache
     waitlists: dict[int, WaitlistEntryCoordinator] = field(default_factory=dict)
     watches: dict[int, WatchedClassCoordinator] = field(default_factory=dict)
+    # Platform async_add_entities callbacks, captured during platform setup so
+    # the reconciler can create entities for coordinators spawned mid-life.
+    add_sensor_entities: AddEntitiesCallback | None = None
+    add_button_entities: AddEntitiesCallback | None = None
 
 
 type BsportConfigEntry = ConfigEntry[BsportRuntimeData]
@@ -314,6 +319,7 @@ async def _reconcile_child_coordinators(
             # failure falls back to _initial data in sensors/buttons.
             await coord.async_refresh()
             runtime.waitlists[oid] = coord
+            _spawn_waitlist_entities(runtime, entry, coord, entry_obj.offer.class_name)
 
     # Watch coordinators
     desired_watches = set(entry.options.get(OPT_WATCHED_OFFER_IDS, []))
@@ -343,3 +349,51 @@ async def _reconcile_child_coordinators(
         )
         await coord.async_refresh()
         runtime.watches[offer_id] = coord
+        _spawn_watch_entities(runtime, entry, coord, offer_id, offer.class_name)
+
+
+def _spawn_waitlist_entities(
+    runtime: BsportRuntimeData,
+    entry: BsportConfigEntry,
+    coord: WaitlistEntryCoordinator,
+    class_name: str,
+) -> None:
+    """Add sensor/button entities for a waitlist coord spawned mid-life.
+
+    No-op during SETUP_IN_PROGRESS: platform setup hasn't run yet, so the
+    callbacks are None; the platform will pick the coord up by iterating
+    runtime.waitlists when it does run. Late imports avoid a circular dep
+    (sensor/button import from this module).
+    """
+    offer_id = coord._initial.offer.offer_id  # noqa: SLF001
+    if runtime.add_sensor_entities is not None:
+        from .sensor import WaitlistPositionSensor, WaitlistStatusSensor
+        runtime.add_sensor_entities([
+            WaitlistStatusSensor(coord, entry, offer_id, class_name),
+            WaitlistPositionSensor(coord, entry, offer_id, class_name),
+        ])
+    if runtime.add_button_entities is not None:
+        from .button import WaitlistBookButton, WaitlistDiscardButton
+        runtime.add_button_entities([
+            WaitlistBookButton(coord, entry),
+            WaitlistDiscardButton(coord, entry),
+        ])
+
+
+def _spawn_watch_entities(
+    runtime: BsportRuntimeData,
+    entry: BsportConfigEntry,
+    coord: WatchedClassCoordinator,
+    offer_id: int,
+    class_name: str,
+) -> None:
+    """Add sensor/button entities for a watch coord spawned mid-life."""
+    if runtime.add_sensor_entities is not None:
+        from .sensor import WatchOpensAtSensor, WatchStatusSensor
+        runtime.add_sensor_entities([
+            WatchStatusSensor(coord, entry, offer_id, class_name),
+            WatchOpensAtSensor(coord, entry, offer_id, class_name),
+        ])
+    if runtime.add_button_entities is not None:
+        from .button import WatchBookButton
+        runtime.add_button_entities([WatchBookButton(coord, entry)])
