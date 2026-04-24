@@ -44,7 +44,7 @@ class WaitlistBookButton(
             f"{DOMAIN}_{entry.entry_id}_waitlist_book_{offer.offer_id}"
         )
         self._attr_device_info = _waitlist_device(
-            entry, offer.offer_id, offer.class_name
+            entry, offer.offer_id, offer.class_name, offer.start_at,
         )
 
     @property
@@ -81,7 +81,7 @@ class WaitlistDiscardButton(
             f"{DOMAIN}_{entry.entry_id}_waitlist_discard_{offer.offer_id}"
         )
         self._attr_device_info = _waitlist_device(
-            entry, offer.offer_id, offer.class_name
+            entry, offer.offer_id, offer.class_name, offer.start_at,
         )
 
     async def async_press(self) -> None:
@@ -108,7 +108,7 @@ class WatchBookButton(
             f"{DOMAIN}_{entry.entry_id}_watch_book_{offer.offer_id}"
         )
         self._attr_device_info = _watch_device(
-            entry, offer.offer_id, offer.class_name
+            entry, offer.offer_id, offer.class_name, offer.start_at,
         )
 
     @property

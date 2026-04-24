@@ -1,13 +1,14 @@
 """Sensor platform for bsport."""
 from __future__ import annotations
 
-from datetime import datetime  # noqa: F401
+from datetime import datetime
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from . import BsportConfigEntry
 from .const import CONF_STUDIO_COVER, DOMAIN
@@ -39,25 +40,43 @@ def _hub_device(entry: BsportConfigEntry) -> DeviceInfo:
     )
 
 
+def _format_class_when(start_at: datetime) -> str:
+    """Short, human-readable local time for a class start — e.g. 'Sat 26 Apr 18:00'.
+
+    Rendered from HA's local timezone so the name matches what the user sees
+    in the bsport app. strftime's %a/%b honor the process locale, which HA
+    typically leaves as English; users on another system locale get their
+    own short names. Intended as a disambiguator in device names when the
+    same class repeats on different days.
+    """
+    return dt_util.as_local(start_at).strftime("%a %d %b %H:%M")
+
+
 def _waitlist_device(
-    entry: BsportConfigEntry, offer_id: int, class_name: str
+    entry: BsportConfigEntry,
+    offer_id: int,
+    class_name: str,
+    start_at: datetime,
 ) -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, f"{entry.entry_id}_waitlist_{offer_id}")},
         via_device=(DOMAIN, entry.entry_id),
-        name=f"Waitlist · {class_name}",
+        name=f"Waitlist · {class_name} · {_format_class_when(start_at)}",
         manufacturer="bsport",
         model="Waitlist entry",
     )
 
 
 def _watch_device(
-    entry: BsportConfigEntry, offer_id: int, class_name: str
+    entry: BsportConfigEntry,
+    offer_id: int,
+    class_name: str,
+    start_at: datetime,
 ) -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, f"{entry.entry_id}_watch_{offer_id}")},
         via_device=(DOMAIN, entry.entry_id),
-        name=f"Watch · {class_name}",
+        name=f"Watch · {class_name} · {_format_class_when(start_at)}",
         manufacturer="bsport",
         model="Watched class",
     )
@@ -212,7 +231,9 @@ class WaitlistStatusSensor(
     ) -> None:
         super().__init__(coord)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_waitlist_status_{offer_id}"
-        self._attr_device_info = _waitlist_device(entry, offer_id, class_name)
+        self._attr_device_info = _waitlist_device(
+            entry, offer_id, class_name, coord._initial.offer.start_at,  # noqa: SLF001
+        )
 
     @property
     def native_value(self) -> str | None:
@@ -243,7 +264,9 @@ class WaitlistPositionSensor(
     ) -> None:
         super().__init__(coord)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_waitlist_position_{offer_id}"
-        self._attr_device_info = _waitlist_device(entry, offer_id, class_name)
+        self._attr_device_info = _waitlist_device(
+            entry, offer_id, class_name, coord._initial.offer.start_at,  # noqa: SLF001
+        )
 
     @property
     def native_value(self) -> int | None:
@@ -287,7 +310,9 @@ class WatchStatusSensor(
     ) -> None:
         super().__init__(coord)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_watch_status_{offer_id}"
-        self._attr_device_info = _watch_device(entry, offer_id, class_name)
+        self._attr_device_info = _watch_device(
+            entry, offer_id, class_name, coord._initial_offer.start_at,  # noqa: SLF001
+        )
 
     @property
     def entity_picture(self) -> str | None:
@@ -319,7 +344,9 @@ class WatchOpensAtSensor(
     ) -> None:
         super().__init__(coord)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_watch_opens_at_{offer_id}"
-        self._attr_device_info = _watch_device(entry, offer_id, class_name)
+        self._attr_device_info = _watch_device(
+            entry, offer_id, class_name, coord._initial_offer.start_at,  # noqa: SLF001
+        )
 
     @property
     def native_value(self) -> datetime | None:
