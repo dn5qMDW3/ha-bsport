@@ -41,7 +41,8 @@
         "title": "bsport options",
         "menu_options": {
           "add_watch": "Add a watched class",
-          "remove_watch": "Remove a watched class"
+          "remove_watch": "Remove a watched class",
+          "set_auto_book_lead_time": "Set auto-book lead time"
         }
       },
       "add_watch": {
@@ -55,6 +56,13 @@
         "title": "Remove watched classes",
         "data": {
           "remove": "Watches to remove"
+        }
+      },
+      "set_auto_book_lead_time": {
+        "title": "Auto-book lead time",
+        "description": "When auto-book is on for a waitlisted class, the integration will book a freed-up spot only if it opens at least this many hours before class start. Spots opening closer to class time still notify you but won't be booked automatically. Default 24 hours.",
+        "data": {
+          "hours": "Hours before class"
         }
       }
     },
@@ -80,6 +88,9 @@
       "waitlist_book":    { "name": "Book" },
       "waitlist_discard": { "name": "Leave waitlist" },
       "watch_book":       { "name": "Book" }
+    },
+    "switch": {
+      "waitlist_autobook": { "name": "Auto-book" }
     },
     "calendar": {
       "bookings": { "name": "Bookings" }

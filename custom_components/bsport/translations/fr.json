@@ -41,7 +41,8 @@
         "title": "Options bsport",
         "menu_options": {
           "add_watch": "Ajouter un cours surveillé",
-          "remove_watch": "Retirer un cours surveillé"
+          "remove_watch": "Retirer un cours surveillé",
+          "set_auto_book_lead_time": "Définir le délai d'auto-réservation"
         }
       },
       "add_watch": {
@@ -55,6 +56,13 @@
         "title": "Retirer des cours surveillés",
         "data": {
           "remove": "Surveillances à retirer"
+        }
+      },
+      "set_auto_book_lead_time": {
+        "title": "Délai d'auto-réservation",
+        "description": "Quand l'auto-réservation est activée pour un cours en liste d'attente, l'intégration ne réserve une place libérée que si elle s'ouvre au moins ce nombre d'heures avant le cours. Les places s'ouvrant plus près du cours vous notifient quand même mais ne sont pas réservées automatiquement. Par défaut 24 heures.",
+        "data": {
+          "hours": "Heures avant le cours"
         }
       }
     },
@@ -80,6 +88,9 @@
       "waitlist_book":    { "name": "Réserver" },
       "waitlist_discard": { "name": "Quitter la liste d'attente" },
       "watch_book":       { "name": "Réserver" }
+    },
+    "switch": {
+      "waitlist_autobook": { "name": "Auto-réservation" }
     },
     "calendar": {
       "bookings": { "name": "Réservations" }
