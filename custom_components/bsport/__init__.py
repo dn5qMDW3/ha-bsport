@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
@@ -21,7 +22,9 @@ from .const import (
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_STUDIO_ID,
+    DEFAULT_AUTO_BOOK_LEAD_TIME,
     DOMAIN,
+    OPT_AUTO_BOOK_LEAD_TIME,
     OPT_WATCHED_OFFER_IDS,
     PLATFORMS,
 )
@@ -43,6 +46,7 @@ class BsportRuntimeData:
     # the reconciler can create entities for coordinators spawned mid-life.
     add_sensor_entities: AddEntitiesCallback | None = None
     add_button_entities: AddEntitiesCallback | None = None
+    add_switch_entities: AddEntitiesCallback | None = None
 
 
 type BsportConfigEntry = ConfigEntry[BsportRuntimeData]
@@ -298,6 +302,14 @@ async def _reconcile_child_coordinators(
     if overview is None:
         return
 
+    # Lead time is sourced from options; the entry-reload listener
+    # reconstructs coordinators when the user changes it.
+    lead_time_seconds = entry.options.get(
+        OPT_AUTO_BOOK_LEAD_TIME,
+        int(DEFAULT_AUTO_BOOK_LEAD_TIME.total_seconds()),
+    )
+    auto_book_lead_time = timedelta(seconds=int(lead_time_seconds))
+
     # Waitlist coordinators
     live_ids = {w.offer.offer_id for w in overview.waitlists}
     for dead_id in list(runtime.waitlists):
@@ -311,6 +323,7 @@ async def _reconcile_child_coordinators(
                 hass, runtime.client, entry_id=entry.entry_id,
                 initial=entry_obj,
                 batch_cache=runtime.waitlist_cache,
+                auto_book_lead_time=auto_book_lead_time,
             )
             # async_refresh (not async_config_entry_first_refresh) because
             # reconcile runs both during SETUP_IN_PROGRESS (initial load)
@@ -358,12 +371,12 @@ def _spawn_waitlist_entities(
     coord: WaitlistEntryCoordinator,
     class_name: str,
 ) -> None:
-    """Add sensor/button entities for a waitlist coord spawned mid-life.
+    """Add sensor/button/switch entities for a waitlist coord spawned mid-life.
 
     No-op during SETUP_IN_PROGRESS: platform setup hasn't run yet, so the
     callbacks are None; the platform will pick the coord up by iterating
     runtime.waitlists when it does run. Late imports avoid a circular dep
-    (sensor/button import from this module).
+    (sensor/button/switch import from this module).
     """
     offer_id = coord._initial.offer.offer_id  # noqa: SLF001
     if runtime.add_sensor_entities is not None:
@@ -377,6 +390,11 @@ def _spawn_waitlist_entities(
         runtime.add_button_entities([
             WaitlistBookButton(coord, entry),
             WaitlistDiscardButton(coord, entry),
+        ])
+    if runtime.add_switch_entities is not None:
+        from .switch import WaitlistAutoBookSwitch
+        runtime.add_switch_entities([
+            WaitlistAutoBookSwitch(coord, entry),
         ])
 
 
