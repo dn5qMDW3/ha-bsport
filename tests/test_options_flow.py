@@ -112,6 +112,8 @@ async def test_options_set_auto_book_lead_time_roundtrip(hass: HomeAssistant):
 async def test_options_set_auto_book_lead_time_rejects_negative(
     hass: HomeAssistant,
 ):
+    """Submitting a negative `hours` value triggers the voluptuous range
+    validator and surfaces as a wrapped `Invalid` error from async_configure."""
     entry = _entry_with_runtime(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
@@ -125,4 +127,24 @@ async def test_options_set_auto_book_lead_time_rejects_negative(
     with pytest.raises(Invalid):
         await hass.config_entries.options.async_configure(
             result["flow_id"], {"hours": -1},
+        )
+
+
+@pytest.mark.asyncio
+async def test_options_set_auto_book_lead_time_rejects_too_large(
+    hass: HomeAssistant,
+):
+    """Submitting an `hours` value above MAX_AUTO_BOOK_LEAD_TIME_HOURS (336)
+    is rejected by the voluptuous range validator."""
+    from voluptuous.error import Invalid
+
+    entry = _entry_with_runtime(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"next_step_id": "set_auto_book_lead_time"},
+    )
+    with pytest.raises(Invalid):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], {"hours": 400},
         )
