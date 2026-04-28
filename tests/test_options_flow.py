@@ -83,3 +83,46 @@ async def test_options_remove_watch_empty_aborts(hass: HomeAssistant):
     )
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "no_watches"
+
+
+@pytest.mark.asyncio
+async def test_options_set_auto_book_lead_time_roundtrip(hass: HomeAssistant):
+    """Setting the lead-time via the options flow stores seconds in
+    entry.options under OPT_AUTO_BOOK_LEAD_TIME."""
+    from custom_components.bsport.const import OPT_AUTO_BOOK_LEAD_TIME
+
+    entry = _entry_with_runtime(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == FlowResultType.MENU
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"next_step_id": "set_auto_book_lead_time"},
+    )
+    assert result["type"] == FlowResultType.FORM
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"hours": 6},
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][OPT_AUTO_BOOK_LEAD_TIME] == 6 * 3600
+
+
+@pytest.mark.asyncio
+async def test_options_set_auto_book_lead_time_rejects_negative(
+    hass: HomeAssistant,
+):
+    entry = _entry_with_runtime(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"next_step_id": "set_auto_book_lead_time"},
+    )
+    # voluptuous range raises during configure; HA wraps it in InvalidData
+    # (a subclass of voluptuous.error.Invalid). Assert the config_entry
+    # option is unchanged.
+    from voluptuous.error import Invalid
+    with pytest.raises(Invalid):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], {"hours": -1},
+        )

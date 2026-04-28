@@ -23,8 +23,11 @@ from .const import (
     CONF_STUDIO_COVER,
     CONF_STUDIO_ID,
     CONF_STUDIO_NAME,
+    DEFAULT_AUTO_BOOK_LEAD_TIME,
     DOMAIN,
     KNOWN_STUDIOS,
+    MAX_AUTO_BOOK_LEAD_TIME_HOURS,
+    OPT_AUTO_BOOK_LEAD_TIME,
     OPT_WATCHED_OFFER_IDS,
 )
 
@@ -197,7 +200,9 @@ class BsportOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_watch", "remove_watch"],
+            menu_options=[
+                "add_watch", "remove_watch", "set_auto_book_lead_time",
+            ],
         )
 
     async def async_step_add_watch(
@@ -315,5 +320,37 @@ class BsportOptionsFlow(config_entries.OptionsFlow):
             data={
                 **self.config_entry.options,
                 OPT_WATCHED_OFFER_IDS: new_ids,
+            },
+        )
+
+    async def async_step_set_auto_book_lead_time(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Set the global auto-book minimum lead time, in hours."""
+        current_seconds = self.config_entry.options.get(
+            OPT_AUTO_BOOK_LEAD_TIME,
+            int(DEFAULT_AUTO_BOOK_LEAD_TIME.total_seconds()),
+        )
+        current_hours = int(current_seconds // 3600)
+        if user_input is None:
+            schema = vol.Schema(
+                {
+                    vol.Required("hours", default=current_hours): vol.All(
+                        vol.Coerce(int),
+                        vol.Range(min=0, max=MAX_AUTO_BOOK_LEAD_TIME_HOURS),
+                    ),
+                }
+            )
+            return self.async_show_form(
+                step_id="set_auto_book_lead_time",
+                data_schema=schema,
+            )
+
+        new_seconds = int(user_input["hours"]) * 3600
+        return self.async_create_entry(
+            title="",
+            data={
+                **self.config_entry.options,
+                OPT_AUTO_BOOK_LEAD_TIME: new_seconds,
             },
         )
