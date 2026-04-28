@@ -490,3 +490,55 @@ async def test_maybe_auto_book_swallows_transient_error(
     # Must not raise.
     await coord.async_maybe_auto_book()
     assert client.book_offer.await_count == 1
+
+
+# ── poll loop auto-book wiring ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_poll_loop_triggers_auto_book_on_convertible(
+    hass: HomeAssistant,
+):
+    """When poll observes status = convertible and conditions are met,
+    auto-book runs as part of the same update cycle."""
+    client = AsyncMock(spec=BsportClient)
+    convertible = _entry(timedelta(days=2), status="convertible", position=1)
+    booking = Booking(
+        booking_id=42, offer=convertible.offer, status="confirmed",
+    )
+    client.book_offer = AsyncMock(return_value=booking)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=convertible,
+        batch_cache=_fake_batch(convertible),
+        auto_book_lead_time=timedelta(hours=24),
+    )
+    # No prior data — first poll observes convertible directly.
+    coord._auto_book_enabled = True
+
+    succeeded: list = []
+    hass.bus.async_listen(
+        "bsport_book_succeeded", lambda e: succeeded.append(e),
+    )
+
+    await coord._async_update_data()
+    await hass.async_block_till_done()
+
+    assert client.book_offer.await_count == 1
+    assert len(succeeded) == 1
+    assert succeeded[0].data["source"] == "autobook"
+
+
+@pytest.mark.asyncio
+async def test_poll_loop_does_not_trigger_when_disabled(hass: HomeAssistant):
+    client = AsyncMock(spec=BsportClient)
+    client.book_offer = AsyncMock()
+    convertible = _entry(timedelta(days=2), status="convertible", position=1)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=convertible,
+        batch_cache=_fake_batch(convertible),
+        auto_book_lead_time=timedelta(hours=24),
+    )
+    # _auto_book_enabled left at default False
+    await coord._async_update_data()
+    await hass.async_block_till_done()
+    client.book_offer.assert_not_called()
