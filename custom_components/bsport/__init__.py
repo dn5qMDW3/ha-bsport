@@ -303,12 +303,23 @@ async def _reconcile_child_coordinators(
         return
 
     # Lead time is sourced from options; the entry-reload listener
-    # reconstructs coordinators when the user changes it.
-    lead_time_seconds = entry.options.get(
-        OPT_AUTO_BOOK_LEAD_TIME,
-        int(DEFAULT_AUTO_BOOK_LEAD_TIME.total_seconds()),
-    )
-    auto_book_lead_time = timedelta(seconds=int(lead_time_seconds))
+    # reconstructs coordinators when the user changes it. Defend against
+    # malformed values (None, str that doesn't parse) — this function is
+    # invoked from a fire-and-forget task in the overview listener, so an
+    # unhandled coercion error would silently stop reconciliation.
+    raw_lead = entry.options.get(OPT_AUTO_BOOK_LEAD_TIME)
+    if raw_lead is None:
+        auto_book_lead_time = DEFAULT_AUTO_BOOK_LEAD_TIME
+    else:
+        try:
+            auto_book_lead_time = timedelta(seconds=int(raw_lead))
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "invalid %s value %r in options; using default %s",
+                OPT_AUTO_BOOK_LEAD_TIME, raw_lead,
+                DEFAULT_AUTO_BOOK_LEAD_TIME,
+            )
+            auto_book_lead_time = DEFAULT_AUTO_BOOK_LEAD_TIME
 
     # Waitlist coordinators
     live_ids = {w.offer.offer_id for w in overview.waitlists}
