@@ -181,12 +181,15 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
             )
 
         self.update_interval = _select_cadence(new_entry.offer.start_at)
-        # Set self.data so async_maybe_auto_book sees the freshly-observed
-        # entry. DataUpdateCoordinator normally assigns self.data after
-        # _async_update_data returns; assigning here is safe and allows the
-        # auto-book gate to evaluate against the new state without an extra
-        # update round-trip. The framework reassigning to the same value is
-        # a no-op.
+        # Pre-publish self.data so async_maybe_auto_book evaluates the gates
+        # against the freshly-observed entry on the same cycle (the framework
+        # otherwise assigns self.data only after this method returns). On the
+        # success path the framework will reassign to the same value — no-op.
+        # On the exception path the framework leaves self.data alone, so this
+        # early write would advance state on a "failed" cycle. That's only
+        # safe because async_maybe_auto_book catches every exception it can
+        # observe today (BsportBookError, BsportTransientError) — keep that
+        # invariant if you add new exception types to async_book.
         self.data = new_entry
         if new_entry.status == "convertible":
             await self.async_maybe_auto_book()

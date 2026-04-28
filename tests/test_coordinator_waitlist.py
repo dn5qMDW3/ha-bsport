@@ -530,6 +530,8 @@ async def test_poll_loop_triggers_auto_book_on_convertible(
 
 @pytest.mark.asyncio
 async def test_poll_loop_does_not_trigger_when_disabled(hass: HomeAssistant):
+    """A convertible spot observed on poll must not be auto-booked when the
+    switch is off — the user-facing gate is the `_auto_book_enabled` flag."""
     client = AsyncMock(spec=BsportClient)
     client.book_offer = AsyncMock()
     convertible = _entry(timedelta(days=2), status="convertible", position=1)
