@@ -47,8 +47,23 @@ CONF_STUDIO_COVER: Final = "studio_cover"
 
 # Config entry options
 OPT_WATCHED_OFFER_IDS: Final = "watched_offer_ids"
+# Minimum lead time (seconds) before class start at which auto-book triggers.
+# When a waitlist spot opens at less than this distance to start, the
+# integration emits the spot-open event but does NOT auto-book — the user is
+# expected to claim it manually if they want it. Stored as seconds for
+# arithmetic with timedelta; the options flow inputs hours.
+OPT_AUTO_BOOK_LEAD_TIME: Final = "auto_book_lead_time"
+DEFAULT_AUTO_BOOK_LEAD_TIME: Final = timedelta(hours=24)
+# Cap to 14 days — the bsport schedule horizon. Larger values would let users
+# set effectively-infinite lead times by accident; reject in the options flow.
+MAX_AUTO_BOOK_LEAD_TIME_HOURS: Final = 24 * 14
 
-PLATFORMS: Final = ["sensor", "button", "calendar"]
+# Tag carried in EVENT_BOOK_SUCCEEDED / EVENT_BOOK_FAILED `source` field for
+# bookings the integration triggered automatically (vs the user pressing the
+# Book button or invoking a service).
+BOOK_SOURCE_AUTOBOOK: Final = "autobook"
+
+PLATFORMS: Final = ["sensor", "button", "calendar", "switch"]
 
 # Studios with confirmed bsport membership. Presented in the config-flow
 # picker dropdown. The selector keeps `custom_value=True` so users of other
