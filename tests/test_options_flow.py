@@ -134,8 +134,9 @@ async def test_options_set_auto_book_lead_time_rejects_negative(
 async def test_options_set_auto_book_lead_time_rejects_too_large(
     hass: HomeAssistant,
 ):
-    """Submitting an `hours` value above MAX_AUTO_BOOK_LEAD_TIME_HOURS (336)
-    is rejected by the voluptuous range validator."""
+    """Submitting `hours = 337` (smallest invalid value above
+    MAX_AUTO_BOOK_LEAD_TIME_HOURS=336) is rejected by the voluptuous range
+    validator. Pins the boundary exactly."""
     from voluptuous.error import Invalid
 
     entry = _entry_with_runtime(hass)
@@ -146,5 +147,5 @@ async def test_options_set_auto_book_lead_time_rejects_too_large(
     )
     with pytest.raises(Invalid):
         await hass.config_entries.options.async_configure(
-            result["flow_id"], {"hours": 400},
+            result["flow_id"], {"hours": 337},
         )

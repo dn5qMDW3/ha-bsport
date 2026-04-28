@@ -145,6 +145,8 @@ class WatchedClassCoordinator(DataUpdateCoordinator[WatchedClass]):
         self.update_interval = _select_cadence(current_offer)
         return WatchedClass(offer=current_offer, status=status)
 
+    # NB: auto-book is waitlist-scoped per spec §1; this coordinator's
+    # source Literal intentionally omits "autobook".
     async def async_book(
         self, *, source: Literal["waitlist", "watch", "service"]
     ) -> None:
