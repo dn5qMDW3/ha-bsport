@@ -60,7 +60,7 @@
       },
       "set_auto_book_lead_time": {
         "title": "Délai d'auto-réservation",
-        "description": "Quand l'auto-réservation est activée pour un cours en liste d'attente, l'intégration ne réserve une place libérée que si elle s'ouvre au moins ce nombre d'heures avant le cours. Les places s'ouvrant plus près du cours vous notifient quand même mais ne sont pas réservées automatiquement. Par défaut 24 heures.",
+        "description": "Une place libérée est auto-réservée uniquement s'il reste au moins ce nombre d'heures avant le cours — une valeur plus élevée est donc plus sélective. Les places s'ouvrant plus près du cours vous notifient mais ne sont pas réservées automatiquement. Par défaut 24 heures.",
         "data": {
           "hours": "Heures avant le cours"
         }

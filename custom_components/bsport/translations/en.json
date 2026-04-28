@@ -60,7 +60,7 @@
       },
       "set_auto_book_lead_time": {
         "title": "Auto-book lead time",
-        "description": "When auto-book is on for a waitlisted class, the integration will book a freed-up spot only if it opens at least this many hours before class start. Spots opening closer to class time still notify you but won't be booked automatically. Default 24 hours.",
+        "description": "A freed-up spot is auto-booked only when at least this many hours remain before class start — so a higher value is more selective. Spots opening closer to class time notify you but won't be booked automatically. Default 24 hours.",
         "data": {
           "hours": "Hours before class"
         }
