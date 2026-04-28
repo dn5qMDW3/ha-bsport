@@ -464,3 +464,29 @@ async def test_maybe_auto_book_skips_when_book_in_flight(
         coord._book_lock.release()
 
     client.book_offer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_maybe_auto_book_swallows_transient_error(
+    hass: HomeAssistant,
+):
+    """Transient errors raised by the underlying book_offer call propagate
+    out of async_book (which doesn't catch them) and must be swallowed by
+    async_maybe_auto_book so the poll cycle isn't aborted."""
+    from custom_components.bsport.api import BsportTransientError
+
+    client = AsyncMock(spec=BsportClient)
+    client.book_offer = AsyncMock(
+        side_effect=BsportTransientError("simulated network error"),
+    )
+    convertible = _entry(timedelta(days=2), status="convertible", position=1)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=convertible,
+        batch_cache=_fake_batch(convertible),
+        auto_book_lead_time=timedelta(hours=24),
+    )
+    coord.data = convertible
+    coord._auto_book_enabled = True
+    # Must not raise.
+    await coord.async_maybe_auto_book()
+    assert client.book_offer.await_count == 1

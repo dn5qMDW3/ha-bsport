@@ -22,6 +22,7 @@ from .api import (
     WaitlistEntry,
 )
 from .const import (
+    BOOK_SOURCE_AUTOBOOK,
     DEFAULT_AUTO_BOOK_LEAD_TIME,
     DOMAIN,
     EVENT_AUTH_FAILED,
@@ -261,7 +262,7 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
         if self._book_lock.locked():
             return
         try:
-            await self.async_book(source="autobook")
+            await self.async_book(source=BOOK_SOURCE_AUTOBOOK)
         except BsportBookError:
             # Already fired EVENT_BOOK_FAILED in async_book; swallow so the
             # poll cycle isn't aborted by a functional booking failure.
