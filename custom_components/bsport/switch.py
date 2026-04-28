@@ -1,7 +1,7 @@
 """Switch platform for bsport — auto-book toggles."""
 from __future__ import annotations
 
-import logging
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import STATE_ON
@@ -14,8 +14,6 @@ from . import BsportConfigEntry
 from .const import DOMAIN
 from .coordinator_waitlist import WaitlistEntryCoordinator
 from .sensor import _waitlist_device
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -78,14 +76,16 @@ class WaitlistAutoBookSwitch(
         last = await self.async_get_last_state()
         if last is not None and last.state == STATE_ON:
             self.coordinator._auto_book_enabled = True  # noqa: SLF001
+            # coord.data is None only if the first refresh failed; the next
+            # successful poll calls async_maybe_auto_book directly.
             if self.coordinator.data is not None:
                 await self.coordinator.async_maybe_auto_book()
 
-    async def async_turn_on(self, **kwargs) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         self.coordinator._auto_book_enabled = True  # noqa: SLF001
         self.async_write_ha_state()
         await self.coordinator.async_maybe_auto_book()
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         self.coordinator._auto_book_enabled = False  # noqa: SLF001
         self.async_write_ha_state()
