@@ -22,6 +22,7 @@ from .api import (
     WaitlistEntry,
 )
 from .const import (
+    DEFAULT_AUTO_BOOK_LEAD_TIME,
     DOMAIN,
     EVENT_AUTH_FAILED,
     EVENT_BOOK_FAILED,
@@ -135,7 +136,7 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
         self._auto_book_lead_time: timedelta = (
             auto_book_lead_time
             if auto_book_lead_time is not None
-            else timedelta(hours=24)
+            else DEFAULT_AUTO_BOOK_LEAD_TIME
         )
         # Serialises manual + auto bookings on this coordinator. async_book
         # acquires it; async_maybe_auto_book skips when held.
