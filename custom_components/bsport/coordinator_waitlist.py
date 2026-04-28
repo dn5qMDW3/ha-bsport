@@ -114,6 +114,8 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
         entry_id: str,
         initial: WaitlistEntry,
         batch_cache: WaitlistBatchCache,
+        *,
+        auto_book_lead_time: timedelta | None = None,
     ):
         self._initial = initial
         super().__init__(
@@ -125,6 +127,19 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
         self._client = client
         self._batch = batch_cache
         self.entry_id = entry_id
+        # Auto-book gate. The switch entity flips _auto_book_enabled; lead time
+        # is seeded from the entry options at coordinator construction so a
+        # change requires an entry reload (which _async_reload_entry already
+        # triggers on options change).
+        self._auto_book_enabled: bool = False
+        self._auto_book_lead_time: timedelta = (
+            auto_book_lead_time
+            if auto_book_lead_time is not None
+            else timedelta(hours=24)
+        )
+        # Serialises manual + auto bookings on this coordinator. async_book
+        # acquires it; async_maybe_auto_book skips when held.
+        self._book_lock: asyncio.Lock = asyncio.Lock()
 
     async def _async_update_data(self) -> WaitlistEntry:
         try:

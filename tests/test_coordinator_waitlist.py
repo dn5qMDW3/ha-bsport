@@ -328,3 +328,29 @@ async def test_waiting_state_cannot_book_does_not_discard(hass: HomeAssistant):
 
     client.discard_waitlist.assert_not_awaited()
     assert client.book_offer.await_count == 1
+
+
+# ── auto-book wiring ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_coordinator_init_accepts_auto_book_lead_time(
+    hass: HomeAssistant,
+):
+    """Constructor takes a lead-time timedelta and stores it; default is 24h."""
+    client = AsyncMock(spec=BsportClient)
+    initial = _entry(timedelta(hours=3))
+
+    coord_default = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=initial,
+        batch_cache=_fake_batch(initial),
+    )
+    assert coord_default._auto_book_lead_time == timedelta(hours=24)
+    assert coord_default._auto_book_enabled is False
+
+    coord_custom = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=initial,
+        batch_cache=_fake_batch(initial),
+        auto_book_lead_time=timedelta(hours=2),
+    )
+    assert coord_custom._auto_book_lead_time == timedelta(hours=2)
