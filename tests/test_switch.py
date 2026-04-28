@@ -335,7 +335,10 @@ async def test_retry_on_next_poll_after_failure(hass: HomeAssistant):
             await coord.async_refresh()
             await hass.async_block_till_done()
 
-    assert book.await_count >= 2  # at least one retry happened
+    # 1: initial book → cannot_book; 2: discard+retry inside async_book →
+    # cannot_book (raises); 3: next poll re-evaluates async_maybe_auto_book
+    # → succeeds. The 3 pins the poll-driven retry path specifically.
+    assert book.await_count == 3
 
 
 # ── 10. Lock prevents concurrent auto+manual book ────────────────────────────
