@@ -183,7 +183,9 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
         return new_entry
 
     async def async_book(
-        self, *, source: Literal["waitlist", "watch", "service"]
+        self,
+        *,
+        source: Literal["waitlist", "watch", "service", "autobook"],
     ) -> None:
         """Attempt to book the waitlist offer.
 
@@ -194,45 +196,79 @@ class WaitlistEntryCoordinator(DataUpdateCoordinator[WaitlistEntry]):
         coordinator sees we're in `convertible` state, drop the waitlist
         entry to release the held spot, then retry the book. Only runs once;
         a second failure is reported as-is.
+
+        Serialised by `_book_lock` so manual presses and auto-book triggers
+        can't queue duplicate requests.
         """
-        entry = self.data if self.data is not None else self._initial
-        offer = entry.offer
-        offer_id = offer.offer_id
-        try:
-            await self._client.book_offer(offer_id)
-        except BsportBookError as err:
-            can_retry = (
-                err.reason == "cannot_book"
-                and self.data is not None
-                and self.data.status == "convertible"
-            )
-            if can_retry:
-                try:
-                    await self._client.discard_waitlist(entry.entry_id)
-                except BsportBookError:
-                    # Couldn't drop the reservation — surface the original
-                    # book error rather than hide it behind a new one.
+        async with self._book_lock:
+            entry = self.data if self.data is not None else self._initial
+            offer = entry.offer
+            offer_id = offer.offer_id
+            try:
+                await self._client.book_offer(offer_id)
+            except BsportBookError as err:
+                can_retry = (
+                    err.reason == "cannot_book"
+                    and self.data is not None
+                    and self.data.status == "convertible"
+                )
+                if can_retry:
+                    try:
+                        await self._client.discard_waitlist(entry.entry_id)
+                    except BsportBookError:
+                        # Couldn't drop the reservation — surface the original
+                        # book error rather than hide it behind a new one.
+                        self._fire_book_failed(offer, source, err.reason)
+                        raise err
+                    try:
+                        await self._client.book_offer(offer_id)
+                    except BsportBookError as err2:
+                        self._fire_book_failed(offer, source, err2.reason)
+                        raise
+                else:
                     self._fire_book_failed(offer, source, err.reason)
-                    raise err
-                try:
-                    await self._client.book_offer(offer_id)
-                except BsportBookError as err2:
-                    self._fire_book_failed(offer, source, err2.reason)
                     raise
-            else:
-                self._fire_book_failed(offer, source, err.reason)
-                raise
-        self.hass.bus.async_fire(
-            EVENT_BOOK_SUCCEEDED,
-            {
-                "entry_id": self.entry_id,
-                "offer_id": offer_id,
-                "class_name": offer.class_name,
-                "start_at": offer.start_at.isoformat(),
-                "source": source,
-            },
-        )
-        await self.async_request_refresh()
+            self.hass.bus.async_fire(
+                EVENT_BOOK_SUCCEEDED,
+                {
+                    "entry_id": self.entry_id,
+                    "offer_id": offer_id,
+                    "class_name": offer.class_name,
+                    "start_at": offer.start_at.isoformat(),
+                    "source": source,
+                },
+            )
+            await self.async_request_refresh()
+
+    async def async_maybe_auto_book(self) -> None:
+        """Trigger an auto-book if all gates pass; otherwise no-op.
+
+        Called from the poll loop on every update where status is convertible
+        (so a transient failure followed by a still-open spot retries on the
+        next poll), and from `WaitlistAutoBookSwitch.async_turn_on` so a
+        currently-convertible spot is grabbed without waiting for the next
+        poll cycle. Failures are not propagated — they're already surfaced
+        via EVENT_BOOK_FAILED, and we don't want to break the poll cycle.
+        """
+        if not self._auto_book_enabled:
+            return
+        data = self.data
+        if data is None or data.status != "convertible":
+            return
+        delta = data.offer.start_at - datetime.now(timezone.utc)
+        if delta < self._auto_book_lead_time:
+            return
+        if self._book_lock.locked():
+            return
+        try:
+            await self.async_book(source="autobook")
+        except BsportBookError:
+            # Already fired EVENT_BOOK_FAILED in async_book; swallow so the
+            # poll cycle isn't aborted by a functional booking failure.
+            pass
+        except BsportTransientError:
+            # Same — transient errors are observable via failed events / logs.
+            pass
 
     def _fire_book_failed(
         self, offer, source: str, reason: str,

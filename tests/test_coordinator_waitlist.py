@@ -354,3 +354,113 @@ async def test_coordinator_init_accepts_auto_book_lead_time(
         auto_book_lead_time=timedelta(hours=2),
     )
     assert coord_custom._auto_book_lead_time == timedelta(hours=2)
+
+
+# ── async_maybe_auto_book ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_maybe_auto_book_skips_when_disabled(hass: HomeAssistant):
+    client = AsyncMock(spec=BsportClient)
+    client.book_offer = AsyncMock()
+    convertible = _entry(timedelta(hours=3), status="convertible", position=1)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=convertible,
+        batch_cache=_fake_batch(convertible),
+    )
+    coord.data = convertible
+    # _auto_book_enabled defaults to False
+    await coord.async_maybe_auto_book()
+    client.book_offer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_maybe_auto_book_skips_when_status_not_convertible(
+    hass: HomeAssistant,
+):
+    client = AsyncMock(spec=BsportClient)
+    client.book_offer = AsyncMock()
+    waiting = _entry(timedelta(hours=3), status="waiting", position=3)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=waiting,
+        batch_cache=_fake_batch(waiting),
+    )
+    coord.data = waiting
+    coord._auto_book_enabled = True
+    await coord.async_maybe_auto_book()
+    client.book_offer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_maybe_auto_book_skips_inside_lead_time(hass: HomeAssistant):
+    """Spot opens 30 min before class with 24h lead time → no auto-book."""
+    client = AsyncMock(spec=BsportClient)
+    client.book_offer = AsyncMock()
+    convertible = _entry(
+        timedelta(minutes=30), status="convertible", position=1
+    )
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=convertible,
+        batch_cache=_fake_batch(convertible),
+        auto_book_lead_time=timedelta(hours=24),
+    )
+    coord.data = convertible
+    coord._auto_book_enabled = True
+    await coord.async_maybe_auto_book()
+    client.book_offer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_maybe_auto_book_books_when_all_conditions_met(
+    hass: HomeAssistant,
+):
+    client = AsyncMock(spec=BsportClient)
+    convertible = _entry(timedelta(days=2), status="convertible", position=1)
+    booking = Booking(
+        booking_id=42, offer=convertible.offer, status="confirmed",
+    )
+    client.book_offer = AsyncMock(return_value=booking)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=convertible,
+        batch_cache=_fake_batch(convertible),
+        auto_book_lead_time=timedelta(hours=24),
+    )
+    coord.data = convertible
+    coord._auto_book_enabled = True
+
+    succeeded: list = []
+    hass.bus.async_listen(
+        "bsport_book_succeeded", lambda e: succeeded.append(e)
+    )
+
+    await coord.async_maybe_auto_book()
+    await hass.async_block_till_done()
+
+    assert client.book_offer.await_count == 1
+    assert len(succeeded) == 1
+    assert succeeded[0].data["source"] == "autobook"
+
+
+@pytest.mark.asyncio
+async def test_maybe_auto_book_skips_when_book_in_flight(
+    hass: HomeAssistant,
+):
+    """If the lock is held (manual book in flight), auto-book no-ops."""
+    client = AsyncMock(spec=BsportClient)
+    client.book_offer = AsyncMock()
+    convertible = _entry(timedelta(days=2), status="convertible", position=1)
+    coord = WaitlistEntryCoordinator(
+        hass, client, "e1", initial=convertible,
+        batch_cache=_fake_batch(convertible),
+        auto_book_lead_time=timedelta(hours=24),
+    )
+    coord.data = convertible
+    coord._auto_book_enabled = True
+
+    await coord._book_lock.acquire()
+    try:
+        await coord.async_maybe_auto_book()
+    finally:
+        coord._book_lock.release()
+
+    client.book_offer.assert_not_called()
