@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import random
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -28,6 +29,7 @@ from .const import (
     EVENT_BOOK_FAILED,
     EVENT_BOOK_SUCCEEDED,
     EVENT_CLASS_BOOKABLE,
+    OFFER_BOOKABLE,
     SCAN_JITTER_RATIO,
     WATCH_POST_OPEN,
     WATCH_PRE_WINDOW_FAR,
@@ -97,6 +99,41 @@ class WatchedClassCoordinator(DataUpdateCoordinator[WatchedClass]):
             return "expired"
         return "awaiting_window"
 
+    async def _apply_authoritative_status(self, offer: Offer) -> Offer:
+        """Overlay the server's own bookability verdict onto *offer*.
+
+        The schedule listing only exposes `available` / `full`, so
+        `parse_offer` infers `is_bookable_now` from those and guesses the
+        registration window as `start_at − 14 days`. That guess is wrong for
+        studios on a different window, which makes the watcher either fire
+        `bsport_class_bookable` early or sit on `awaiting_window` after the
+        class actually opened. `bookable_status_list` answers the question
+        directly, so prefer it whenever it's available.
+
+        Status is decoration on top of a successful listing fetch: if the
+        call fails we keep the inferred value rather than failing the whole
+        update.
+        """
+        try:
+            statuses = await self._client.list_bookable_status((offer.offer_id,))
+        except BsportTransientError as err:
+            _LOGGER.debug(
+                "bookable_status_list unavailable for offer %s (%s); "
+                "falling back to inferred bookability",
+                offer.offer_id,
+                err,
+            )
+            return offer
+
+        status = statuses.get(offer.offer_id)
+        if status is None or status.bookable_status is None:
+            return offer
+
+        is_bookable = status.bookable_status == OFFER_BOOKABLE
+        if is_bookable == offer.is_bookable_now:
+            return offer
+        return replace(offer, is_bookable_now=is_bookable)
+
     async def _async_update_data(self) -> WatchedClass:
         try:
             offers = await self._client.list_upcoming_offers(
@@ -116,6 +153,8 @@ class WatchedClassCoordinator(DataUpdateCoordinator[WatchedClass]):
         matching = next(
             (o for o in offers if o.offer_id == offer_id), None
         )
+        if matching is not None:
+            matching = await self._apply_authoritative_status(matching)
 
         if matching is None:
             # Offer gone — treat as expired (or booked elsewhere if flagged)

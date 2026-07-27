@@ -65,6 +65,22 @@ MAX_AUTO_BOOK_LEAD_TIME_HOURS: Final = 24 * 14
 # Book button or invoking a service).
 BOOK_SOURCE_AUTOBOOK: Final = "autobook"
 
+# `bookable_status` values from /book/v1/offer/bookable_status_list/.
+# Authoritative per-offer booking state — unlike the `available`/`full` flags
+# on the schedule listing, this accounts for the studio's registration window,
+# capacity, and per-member locks in one field.
+OFFER_BOOKABLE: Final = 0
+OFFER_BOOKABLE_CLOSE_TOO_SOON: Final = 1   # registration window not open yet
+OFFER_BOOKABLE_CLOSE_TOO_LATE: Final = 2   # window has closed
+OFFER_BOOKABLE_FULL: Final = 3
+OFFER_BOOKABLE_LOCKED: Final = 4
+
+# `waiting_list_status` values from the same endpoint.
+OFFER_WAITLIST_OPEN: Final = 0             # can join the waitlist
+OFFER_WAITLIST_FULL: Final = 1
+OFFER_WAITLIST_ALREADY_BOOKED: Final = 2
+OFFER_WAITLIST_CONVERTIBLE: Final = 3      # a spot has opened for this member
+
 PLATFORMS: Final = ["sensor", "button", "calendar", "switch"]
 
 # Studios with confirmed bsport membership. Presented in the config-flow

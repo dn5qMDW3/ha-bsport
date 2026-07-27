@@ -31,6 +31,20 @@ class Offer:
 
 
 @dataclass(frozen=True, slots=True)
+class OfferStatus:
+    """Authoritative per-offer booking state.
+
+    From `/book/v1/offer/bookable_status_list/?id__in=…`. Both fields are
+    the raw integer codes — see the `OFFER_BOOKABLE_*` and `OFFER_WAITLIST_*`
+    constants in const.py. `None` means the server omitted the field.
+    """
+
+    offer_id: int
+    bookable_status: int | None
+    waiting_list_status: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class WaitlistEntry:
     entry_id: int            # waitlist-entry id — distinct from offer.offer_id
     offer: Offer
