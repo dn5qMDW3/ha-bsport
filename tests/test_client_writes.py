@@ -354,3 +354,47 @@ async def test_discard_waitlist_4xx_raises():
             client = _make_client(session)
             with pytest.raises(BsportBookError):
                 await client.discard_waitlist(waitlist_entry_id=6549244)
+
+
+# ---------------------------------------------------------------------------
+# error_codes decoding — the `[offer_id, code]` pair shape the app uses
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "error_codes, expected_reason",
+    [
+        # The real shape: pairs of (offer_id, numeric code).
+        ([[30362966, 2015]], "booking_limit_reached"),
+        ([[30362966, 2018]], "no_credit"),
+        ([[30362966, 23002]], "too_many_future_bookings"),
+        # Tuples/other iterables of the same shape.
+        ([[30362966, 8001], [123, 2015]], "spot_unavailable"),
+        # Legacy shapes still resolve.
+        (["OFFER_NO_LONGER_CONVERTIBLE"], "spot_taken"),
+        ([{"code": "OFFER_WAITING_LIST_LOCKED_BY_PENDING_BOOKINGS"}], "locked_pending"),
+        # Unrecognised payloads degrade rather than crash.
+        ([[30362966, 4242]], "unknown_client_error"),
+        ([[]], "unknown_client_error"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_register_waitlist_error_code_shapes(error_codes, expected_reason):
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.post(
+                _USER_REG_URL,
+                status=200,
+                payload={
+                    "offers_booked": [],
+                    "offer_on_waiting_list": [],
+                    "error_codes": error_codes,
+                    "buyable_item_error_code": None,
+                    "extra_data": [],
+                },
+            )
+            client = _make_client(session)
+            with pytest.raises(BsportBookError) as excinfo:
+                await client.register_waitlist(offer_id=30362966)
+    assert excinfo.value.reason == expected_reason
+
