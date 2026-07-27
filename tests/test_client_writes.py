@@ -354,3 +354,111 @@ async def test_discard_waitlist_4xx_raises():
             client = _make_client(session)
             with pytest.raises(BsportBookError):
                 await client.discard_waitlist(waitlist_entry_id=6549244)
+
+
+# ---------------------------------------------------------------------------
+# error_codes decoding — the `[offer_id, code]` pair shape the app uses
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "error_codes, expected_reason",
+    [
+        # The real shape: pairs of (offer_id, numeric code).
+        ([[30362966, 2015]], "booking_limit_reached"),
+        ([[30362966, 2018]], "no_credit"),
+        ([[30362966, 23002]], "too_many_future_bookings"),
+        # Tuples/other iterables of the same shape.
+        ([[30362966, 8001], [123, 2015]], "spot_unavailable"),
+        # Legacy shapes still resolve.
+        (["OFFER_NO_LONGER_CONVERTIBLE"], "spot_taken"),
+        ([{"code": "OFFER_WAITING_LIST_LOCKED_BY_PENDING_BOOKINGS"}], "locked_pending"),
+        # Unrecognised payloads degrade rather than crash.
+        ([[30362966, 4242]], "unknown_client_error"),
+        ([[]], "unknown_client_error"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_register_waitlist_error_code_shapes(error_codes, expected_reason):
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.post(
+                _USER_REG_URL,
+                status=200,
+                payload={
+                    "offers_booked": [],
+                    "offer_on_waiting_list": [],
+                    "error_codes": error_codes,
+                    "buyable_item_error_code": None,
+                    "extra_data": [],
+                },
+            )
+            client = _make_client(session)
+            with pytest.raises(BsportBookError) as excinfo:
+                await client.register_waitlist(offer_id=30362966)
+    assert excinfo.value.reason == expected_reason
+
+
+# ---------------------------------------------------------------------------
+# list_bookable_status
+# ---------------------------------------------------------------------------
+
+
+_STATUS_URL = (
+    f"{BSPORT_API_BASE}/book/v1/offer/bookable_status_list/?id__in=101,102"
+)
+
+
+@pytest.mark.asyncio
+async def test_list_bookable_status_parses_results():
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.get(
+                _STATUS_URL,
+                status=200,
+                payload={
+                    "results": [
+                        {"id": 101, "bookable_status": 0, "waiting_list_status": 0},
+                        {"id": 102, "bookable_status": 3, "waiting_list_status": 3},
+                    ]
+                },
+            )
+            client = _make_client(session)
+            out = await client.list_bookable_status((101, 102))
+
+    assert set(out) == {101, 102}
+    assert out[101].bookable_status == 0
+    assert out[102].bookable_status == 3
+    assert out[102].waiting_list_status == 3
+
+
+@pytest.mark.asyncio
+async def test_list_bookable_status_tolerates_missing_fields():
+    async with aiohttp.ClientSession() as session:
+        with aioresponses() as m:
+            m.get(
+                _STATUS_URL,
+                status=200,
+                payload={
+                    "results": [
+                        {"id": 101},                      # no status fields
+                        {"bookable_status": 0},           # no id — dropped
+                        "garbage",                        # not a dict — dropped
+                        {"id": 102, "bookable_status": None},
+                    ]
+                },
+            )
+            client = _make_client(session)
+            out = await client.list_bookable_status((101, 102))
+
+    assert set(out) == {101, 102}
+    assert out[101].bookable_status is None
+    assert out[102].bookable_status is None
+
+
+@pytest.mark.asyncio
+async def test_list_bookable_status_empty_input_makes_no_request():
+    async with aiohttp.ClientSession() as session:
+        with aioresponses():  # any request would raise "not mocked"
+            client = _make_client(session)
+            assert await client.list_bookable_status(()) == {}

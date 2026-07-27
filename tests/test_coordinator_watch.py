@@ -9,10 +9,14 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.bsport.api import (
     BsportClient,
+    BsportTransientError,
     Offer,
+    OfferStatus,
     WatchedClass,
 )
 from custom_components.bsport.const import (
+    OFFER_BOOKABLE,
+    OFFER_BOOKABLE_CLOSE_TOO_SOON,
     WATCH_PRE_WINDOW_FAR,
     WATCH_PRE_WINDOW_IMMINENT,
     WATCH_PRE_WINDOW_MID,
@@ -93,6 +97,16 @@ async def test_transition_awaiting_to_bookable_fires_class_bookable(
         bookable_at_delta=timedelta(hours=2), is_bookable_now=True
     )
     client.list_upcoming_offers = AsyncMock(return_value=(bookable_offer,))
+    # Server agrees the class is open — no override of the listing's verdict.
+    client.list_bookable_status = AsyncMock(
+        return_value={
+            99: OfferStatus(
+                offer_id=99,
+                bookable_status=OFFER_BOOKABLE,
+                waiting_list_status=None,
+            )
+        }
+    )
 
     coord = WatchedClassCoordinator(
         hass, client, "e1", studio_id=7, initial_offer=initial_offer
@@ -109,3 +123,113 @@ async def test_transition_awaiting_to_bookable_fires_class_bookable(
     assert len(events) == 1
     assert events[0].data["offer_id"] == 99
     assert events[0].data["entry_id"] == "e1"
+
+
+# ── authoritative bookable_status overlay ─────────────────────────────────────
+
+
+def _coord_with(hass, client, offer):
+    return WatchedClassCoordinator(
+        hass, client, "e1", studio_id=7, initial_offer=offer
+    )
+
+
+@pytest.mark.asyncio
+async def test_authoritative_status_suppresses_premature_bookable(
+    hass: HomeAssistant,
+):
+    """Listing says bookable, server says the window hasn't opened.
+
+    This is the case the 14-day `bookable_at` guess got wrong for studios on
+    a shorter registration window: we'd fire bsport_class_bookable early.
+    """
+    client = AsyncMock(spec=BsportClient)
+    offer = _make_offer(bookable_at_delta=timedelta(hours=2), is_bookable_now=True)
+    client.list_upcoming_offers = AsyncMock(return_value=(offer,))
+    client.list_bookable_status = AsyncMock(
+        return_value={
+            99: OfferStatus(
+                offer_id=99,
+                bookable_status=OFFER_BOOKABLE_CLOSE_TOO_SOON,
+                waiting_list_status=None,
+            )
+        }
+    )
+
+    coord = _coord_with(hass, client, offer)
+    coord.data = WatchedClass(offer=offer, status="awaiting_window")
+
+    events: list = []
+    hass.bus.async_listen("bsport_class_bookable", lambda e: events.append(e))
+
+    result = await coord._async_update_data()
+    await hass.async_block_till_done()
+
+    assert result.offer.is_bookable_now is False
+    assert result.status == "awaiting_window"
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_authoritative_status_promotes_missed_bookable(
+    hass: HomeAssistant,
+):
+    """Listing flags look non-bookable but the server says it's open."""
+    client = AsyncMock(spec=BsportClient)
+    offer = _make_offer(bookable_at_delta=timedelta(hours=2), is_bookable_now=False)
+    client.list_upcoming_offers = AsyncMock(return_value=(offer,))
+    client.list_bookable_status = AsyncMock(
+        return_value={
+            99: OfferStatus(
+                offer_id=99,
+                bookable_status=OFFER_BOOKABLE,
+                waiting_list_status=None,
+            )
+        }
+    )
+
+    coord = _coord_with(hass, client, offer)
+    coord.data = WatchedClass(offer=offer, status="awaiting_window")
+
+    events: list = []
+    hass.bus.async_listen("bsport_class_bookable", lambda e: events.append(e))
+
+    result = await coord._async_update_data()
+    await hass.async_block_till_done()
+
+    assert result.offer.is_bookable_now is True
+    assert result.status == "bookable"
+    assert len(events) == 1
+
+
+@pytest.mark.asyncio
+async def test_status_fetch_failure_falls_back_to_listing(hass: HomeAssistant):
+    """A transient status failure must not fail the whole update."""
+    client = AsyncMock(spec=BsportClient)
+    offer = _make_offer(bookable_at_delta=timedelta(hours=2), is_bookable_now=True)
+    client.list_upcoming_offers = AsyncMock(return_value=(offer,))
+    client.list_bookable_status = AsyncMock(side_effect=BsportTransientError("boom"))
+
+    coord = _coord_with(hass, client, offer)
+    coord.data = WatchedClass(offer=offer, status="awaiting_window")
+
+    result = await coord._async_update_data()
+
+    assert result.offer.is_bookable_now is True
+    assert result.status == "bookable"
+
+
+@pytest.mark.asyncio
+async def test_status_absent_for_offer_leaves_listing_verdict(hass: HomeAssistant):
+    """Server returned no row for our offer — keep the inferred value."""
+    client = AsyncMock(spec=BsportClient)
+    offer = _make_offer(bookable_at_delta=timedelta(hours=2), is_bookable_now=True)
+    client.list_upcoming_offers = AsyncMock(return_value=(offer,))
+    client.list_bookable_status = AsyncMock(return_value={})
+
+    coord = _coord_with(hass, client, offer)
+    coord.data = WatchedClass(offer=offer, status="awaiting_window")
+
+    result = await coord._async_update_data()
+
+    assert result.offer.is_bookable_now is True

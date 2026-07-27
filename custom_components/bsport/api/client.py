@@ -9,27 +9,39 @@ import aiohttp
 
 from ..const import BSPORT_API_BASE, BSPORT_SIGNIN_URL
 from .errors import BsportAuthError, BsportBookError, BsportRateLimited, BsportTransientError, normalize_book_error
-from .models import AccountOverview, Booking, Offer, WaitlistEntry
+from .models import AccountOverview, Booking, Offer, OfferStatus, WaitlistEntry
 from .parsers import parse_booking, parse_membership, parse_offer, parse_waitlist_entry
 
 
-def _extract_error_code(error_codes: object) -> str | None:
-    """Pull the first usable code string out of a `user_registration` error payload.
+def _extract_error_code(error_codes: object) -> str | int | None:
+    """Pull the first usable code out of a `user_registration` error payload.
 
-    bsport has shipped a few shapes here: a list of strings, a list of dicts
-    keyed by `code`, or a list of nested objects. We don't rely on a fixed
-    schema — just flatten and take the first non-empty token.
+    The shape the app itself decodes is a list of ``[offer_id, code]`` pairs
+    — it maps each entry through ``slice(pair, 2)`` and reduces them into
+    ``{offer_id: code}``. That's the case we care about most, because
+    missing it collapses every distinguishable failure (weekly cap, no
+    credit, pack disabled) into `unknown_client_error`.
+
+    bsport has also shipped a bare list of strings and a list of dicts keyed
+    by `code`, so those are still handled. We don't rely on a fixed schema —
+    just take the first usable token.
     """
     if not isinstance(error_codes, list) or not error_codes:
         return None
     first = error_codes[0]
-    if isinstance(first, str):
+    if isinstance(first, (str, int)) and not isinstance(first, bool):
         return first
     if isinstance(first, dict):
         for key in ("code", "error_code", "reason"):
             val = first.get(key)
-            if isinstance(val, str) and val:
+            if isinstance(val, (str, int)) and not isinstance(val, bool) and val:
                 return val
+    if isinstance(first, (list, tuple)):
+        # `[offer_id, code]` — the code is the second element. A one-element
+        # entry is treated as the code itself rather than dropped.
+        code = first[1] if len(first) >= 2 else (first[0] if first else None)
+        if isinstance(code, (str, int)) and not isinstance(code, bool):
+            return code
     return None
 
 
@@ -296,6 +308,66 @@ class BsportClient:
                 replace(e, position=mp, waiting_list_size=ws, dynamic=dy)
             )
         return tuple(out)
+
+    async def list_bookable_status(
+        self, offer_ids: tuple[int, ...] | list[int]
+    ) -> dict[int, OfferStatus]:
+        """Return authoritative booking state for *offer_ids* in one call.
+
+        `GET /book/v1/offer/bookable_status_list/?id__in=<csv>` — the same
+        endpoint the mobile app drives its "Book" button from. It folds the
+        studio's registration window, capacity and per-member locks into a
+        single `bookable_status` code, which is strictly better than
+        inferring bookability from the schedule listing's `available` /
+        `full` flags plus a guessed 14-day window.
+
+        Missing offers are simply absent from the returned mapping. A
+        transient failure raises; callers that treat status as decoration
+        should catch BsportTransientError and fall back.
+        """
+        if not offer_ids:
+            return {}
+        await self._wait_if_paused()
+        ids = ",".join(str(int(o)) for o in offer_ids)
+        url = self._bsport_url(
+            f"/book/v1/offer/bookable_status_list/?id__in={ids}"
+        )
+        body = await self._get_json(url)
+        # The app reduces `results` into `byId` keyed on each record's `id`.
+        # Accept a bare list too, in case this endpoint ever drops the
+        # pagination envelope the way the payment-pack list does.
+        if isinstance(body, dict):
+            rows = body.get("results") or []
+        elif isinstance(body, list):
+            rows = body
+        else:
+            rows = []
+
+        out: dict[int, OfferStatus] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            raw_id = row.get("id")
+            if not isinstance(raw_id, int) or isinstance(raw_id, bool):
+                continue
+            bookable = row.get("bookable_status")
+            waiting = row.get("waiting_list_status")
+            out[raw_id] = OfferStatus(
+                offer_id=raw_id,
+                bookable_status=(
+                    bookable
+                    if isinstance(bookable, int)
+                    and not isinstance(bookable, bool)
+                    else None
+                ),
+                waiting_list_status=(
+                    waiting
+                    if isinstance(waiting, int)
+                    and not isinstance(waiting, bool)
+                    else None
+                ),
+            )
+        return out
 
     async def _compatible_packs_for_offer(self, offer_id: int) -> list[dict]:
         """Return payment packs that can book *offer_id*, in server-preferred order.

@@ -59,6 +59,11 @@ def parse_offer(raw: dict) -> Offer:
     start_at = _parse_dt(raw["date_start"])
     duration = raw.get("duration_minute") or 0
     end_at = start_at + timedelta(minutes=duration)
+    # Estimate only — neither offer shape carries the studio's real
+    # registration window (that lives on `meta_activity`, which the schedule
+    # and waitlist responses omit). Used solely to pick a poll cadence in
+    # WatchedClassCoordinator; actual bookability comes from
+    # `/book/v1/offer/bookable_status_list/` where available.
     bookable_at = start_at - timedelta(days=14)
 
     available = raw.get("available")

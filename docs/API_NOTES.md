@@ -5,7 +5,7 @@ short. Raw recon captures and the original APK-analysis script live on the
 maintainer's disk (both gitignored). Everything load-bearing for maintenance
 should be in this file.
 
-Last updated: 2026-04-20.
+Last updated: 2026-07-27 (re-verified against Chimosa 7.34.1).
 
 ---
 
@@ -59,6 +59,8 @@ Last updated: 2026-04-20.
 | `GET /api-v0/booking/future/` | DRF-paginated list of upcoming confirmed bookings. Each result has `id` (the booking id, required for the cancel endpoint), `offer`, `booking_status_code` (0=confirmed, 1=attended, 2=cancelled, 3=noshow), `status` (bool), etc. |
 | `GET /book/v1/offer/registered/` | Flat list of `offer_id` integers the user is currently booked into. Fast check. |
 | `GET /book/v1/offer/?company=<id>&date=YYYY-MM-DD` | Schedule listing. Supports `activity=<id>` and `date_start__gte=ISO` filters too. DRF-paginated. Used for the "Add watched class" picker and for the `WatchedClassCoordinator` to locate an offer by id. |
+| `GET /book/v1/offer/bookable_status_list/?id__in=<csv>` | **Authoritative per-offer booking state**, batched. Response `{"results": [{"id", "bookable_status", "waiting_list_status"}]}` — the app reduces `results` into a `byId` map. `bookable_status`: 0 bookable, 1 window not open yet, 2 window closed, 3 full, 4 locked. `waiting_list_status`: 0 open, 1 full, 2 already booked, 3 convertible. Preferred over inferring bookability from the schedule listing's `available`/`full` flags. |
+| `GET /book/v1/offer/waiting_list_position_list/?id__in=<csv>` | Batched queue positions. Per row: `waiting_list_position: {member_position, waiting_list_size, dynamic}`. `dynamic`: 0 = ordered/FIFO, 1 = unordered (the app hides positions entirely when unordered). |
 | `GET /buyable/v1/payment-pack/consumer-payment-pack/` | User's payment packs. Returns a plain JSON list (no pagination envelope). Fields per pack: `id, disabled, reverted, starting_date, ending_date, used_credits, available_credits, bookings_this_week, payment_pack_id, ending_date, …`. **Filter active**: `not disabled and not reverted and starting_date <= today <= ending_date`. Subscription members have many pre-provisioned future-month packs — see "Gotchas" below. |
 
 ## Write endpoints
@@ -116,24 +118,70 @@ Last updated: 2026-04-20.
   the stored password if a token refresh fails. If the user changes their
   bsport password, the entry needs to be re-added.
 
+## `user_registration` — the batched book/waitlist endpoint
+
+`POST /book/v1/offer/user_registration/` is what the app's "Book" button
+drives. It handles booking and waitlist registration in one call and answers
+200 even on failure — the outcome is in the body, not the status.
+
+Request:
+
+```json
+{
+  "consumer_payment_pack": 123,
+  "offers":      [{"offer_id": "456", "extra_data": {"booking_for_member": null,
+                                                     "additional_guest_info": []}}],
+  "waiting_list": [{"offer_id": "789", "extra_data": {}}]
+}
+```
+
+Put an offer in `offers` to book it, in `waiting_list` to join its waitlist.
+(An earlier round of recon probed this with the wrong keys and got 200 with
+an empty `offers_booked` — that's what a body the server doesn't recognise
+looks like, not a broken endpoint.)
+
+Response buckets: `offers_booked`, `offer_on_waiting_list`, `error_codes`,
+`extra_data`.
+
+**`error_codes` is a list of `[offer_id, numeric_code]` pairs** — the app
+reduces it into `{offer_id: code}`. The numeric codes are a separate
+namespace from the string `code` field other endpoints return. The set we
+map lives in `api/errors.py`; notable ones:
+
+| Code | Meaning |
+|---|---|
+| 2014 / 2015 / 2016 / 2017 | pack maxout day / **week** / month / year |
+| 2018 | not enough credit |
+| 2019 | pack disabled |
+| 6002 / 6003 / 6005 | waitlist full / already booked / locked by pending bookings |
+| 8001 | spot not available |
+| 23001 | no usable consumer payment pack |
+| 23002 | too many future bookings |
+
+2015 is the weekly cap — the thing that makes a convertible waitlist entry
+fail to convert (see the gotcha above).
+
 ## Unresolved / deferred
 
-- **Canonical waitlist → booking "convert" endpoint.** The mobile bundle
-  exposes `postUserRegistration(body) → POST /book/v1/offer/user_registration/`
-  and a multi-step basket flow under `/financial-services/v1/checkout/basket/…`.
-  Probing `user_registration/` with a dozen body shapes returned HTTP 200
-  with an empty `offers_booked` list — the endpoint accepts our call but
-  does nothing. Nailing the exact body shape needs a mitmproxy capture of
-  the live Chimosa app at the moment a user taps "Book" on a convertible
-  waitlist entry. Until then we rely on the `/register_booking/` path,
-  which surfaces the weekly cap as a `cannot_book` error rather than
-  performing the conversion.
-- **No per-offer detail endpoint discovered.** Status polling uses the
-  schedule listing (`/book/v1/offer/?company=&date=`) plus the waitlist
-  list, and approximates `bookable_at` as `start_at − 14 days`. If bsport
-  ever surfaces a `GET /book/v1/offer/<id>/` endpoint we should switch to
-  it — the placeholder works for most studios' registration windows but
-  not all.
+- **Real registration-window length.** `bookable_status` tells us *whether*
+  a class is open, which is what the watcher actually needs. It doesn't say
+  *when* it opens. The app computes that as
+  `date_start − meta_activity.first_booking_minutes_until`, but
+  `meta_activity` is null on both offer shapes we fetch; the app gets it
+  from a per-offer retrieve we haven't located. `parse_offer` therefore
+  still estimates `bookable_at` as `start_at − 14 days`, now used *only*
+  to pick a poll cadence — never to decide bookability.
+- **Per-studio waitlist configuration.** `GET
+  /book/v1/waiting-list/configuration/<company_id>/` exists and carries at
+  least `waiting_list_disabled` and `dynamic`. We read `dynamic` off the
+  per-offer position payload instead; the studio-level call would let us
+  suppress position sensors wholesale on unordered waitlists.
+- **ICS feed.** `GET
+  /book/v1/booking/my-calendar-by-token/<auth_token>/booking-feed.ics`
+  returns the user's bookings as iCalendar, authenticated by the token in
+  the path. Not needed by `calendar.py` (which builds events from the REST
+  reads) but worth documenting for users who want a phone-calendar
+  subscription.
 - **Discard waitlist endpoint.** `discardBookingOption` function exists in
   the mobile bundle but the URL wasn't extracted. `POST
   /api-v0/waiting-list/booking-option/discard/` is a guess worth probing
@@ -159,7 +207,7 @@ studio's credentials, edit the `probes` list in the script, rerun.
 
 ```bash
 # Extract the base APK from the .xapk (both gitignored)
-unzip -p Chimosa_7.33.0_APKPure.xapk com.bsport_538.apk > /tmp/chimosa.apk
+unzip -p Chimosa_7.34.1_APKPure.xapk com.bsport_538.apk > /tmp/chimosa.apk
 unzip -p /tmp/chimosa.apk assets/index.android.bundle > /tmp/bundle.hbc
 
 # Decompile with hermes-dec (pip install hermes-dec)

@@ -43,3 +43,37 @@ def test_normalize_rate_limited_default_retry_after():
     err = normalize_book_error(None, status=429, raw_body="")
     assert isinstance(err, BsportRateLimited)
     assert err.retry_after == 60.0
+
+
+@pytest.mark.parametrize(
+    "bsport_code, expected_reason",
+    [
+        # `user_registration` numeric codes, read from the Chimosa 7.34.1
+        # bundle's error-constant module.
+        (2014, "booking_limit_reached"),
+        (2015, "booking_limit_reached"),   # the weekly cap
+        (2016, "booking_limit_reached"),
+        (2017, "booking_limit_reached"),
+        (2018, "no_credit"),
+        (2019, "pack_disabled"),
+        (6002, "waitlist_full"),
+        (6003, "already_booked"),
+        (6005, "locked_pending"),
+        (8001, "spot_unavailable"),
+        (23001, "no_payment_pack"),
+        (23002, "too_many_future_bookings"),
+        (99999, "unknown_client_error"),
+        # Digit strings resolve through the numeric map too.
+        ("2015", "booking_limit_reached"),
+    ],
+)
+def test_normalize_numeric_book_error(bsport_code, expected_reason):
+    err = normalize_book_error(bsport_code, status=200, raw_body="{}")
+    assert isinstance(err, BsportBookError)
+    assert err.reason == expected_reason
+
+
+def test_normalize_none_code():
+    err = normalize_book_error(None, status=400, raw_body="{}")
+    assert isinstance(err, BsportBookError)
+    assert err.reason == "unknown_client_error"
