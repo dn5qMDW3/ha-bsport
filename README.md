@@ -184,4 +184,6 @@ New studio? Add its `(company_id, "Studio Name")` tuple to [`KNOWN_STUDIOS`](cus
 
 ## License & attribution
 
+Released under the [MIT License](LICENSE).
+
 This integration talks to the private bsport HTTPS API with credentials the user already owns. It is not affiliated with, endorsed by, or sponsored by bsport or any studio running on the platform. Use at your own risk.
