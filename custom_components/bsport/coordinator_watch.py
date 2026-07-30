@@ -40,6 +40,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_ZERO = timedelta(0)
 _1MIN = timedelta(minutes=1)
 _1H = timedelta(hours=1)
 _24H = timedelta(hours=24)
@@ -58,8 +59,16 @@ def _select_cadence(offer: Offer) -> timedelta:
             base = WATCH_PRE_WINDOW_MID
         elif delta > _1MIN:
             base = WATCH_PRE_WINDOW_NEAR
-        else:
+        elif delta > _ZERO:
             base = WATCH_PRE_WINDOW_IMMINENT
+        else:
+            # `bookable_at` is a 14-day guess (see `parse_offer`). It has now
+            # elapsed, yet the server still reports the class as unbookable —
+            # so the guess was wrong and this studio opens its window later.
+            # There is no known instant to race towards, and the guess gives
+            # us no better one, so back off instead of holding the 5s cadence
+            # for the days until the real window opens.
+            base = WATCH_PRE_WINDOW_MID
 
     jitter = base * SCAN_JITTER_RATIO * random.random()
     return base + jitter

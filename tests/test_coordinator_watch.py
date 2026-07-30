@@ -81,6 +81,22 @@ def test_cadence_imminent():
     assert base - timedelta(seconds=0.01) <= result <= base * 1.1 + timedelta(seconds=0.01)
 
 
+def test_cadence_backs_off_when_bookable_at_guess_has_passed():
+    """A stale `bookable_at` must not pin the coordinator at the 5s cadence.
+
+    `parse_offer` guesses `bookable_at` as `start_at - 14 days`. For a studio
+    that opens its window later than that, the guess elapses while the server
+    still reports the class as unbookable, so `delta` goes negative. Treating
+    that as "imminent" polls every 5s for however long the guess is wrong —
+    days, in the 7-day-window case — rather than the ~1 minute the imminent
+    branch is meant to cover.
+    """
+    offer = _make_offer(bookable_at_delta=timedelta(days=-7), is_bookable_now=False)
+    base = WATCH_PRE_WINDOW_MID
+    result = _select_cadence(offer)
+    assert base - timedelta(seconds=0.01) <= result <= base * 1.1 + timedelta(seconds=0.01)
+
+
 # ── bookable transition ───────────────────────────────────────────────────────
 
 
