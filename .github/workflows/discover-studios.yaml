@@ -1,8 +1,9 @@
 name: Discover bsport studios
 
-# Re-scrapes the APKPure developer page to catch new bsport-powered
-# studios, rewrites KNOWN_STUDIOS in const.py, and opens a PR when the
-# list changes. No secrets required, the source is public.
+# Walks bsport's Google Play developer listing to catch new bsport-powered
+# studios, appends them to KNOWN_STUDIOS in const.py, and opens a PR when
+# the list grows. No secrets required, the source is public. Play's listing
+# is partial (~150 apps per store country), so entries are only ever added.
 #
 # Security note: this workflow never consumes untrusted event payloads
 # (no issue titles, PR bodies, commit messages etc.) in run steps, so it
@@ -47,7 +48,7 @@ jobs:
 
       - name: Open PR if KNOWN_STUDIOS changed
         if: steps.diff.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: auto/known-studios
           delete-branch: true
@@ -55,16 +56,15 @@ jobs:
           commit-message: "chore: auto-update KNOWN_STUDIOS"
           body: |
             Automated discovery of new bsport-powered studios from
-            APKPure's bsport developer page.
+            bsport's Google Play developer listing.
 
             - Source: `scripts/discover_studios.py`
             - Trigger: scheduled workflow (`.github/workflows/discover-studios.yaml`)
 
             Review the diff before merging — a new entry just means the
             scraper found a `com.bsport_<N>` app with a valid display name.
-            Removals are rarer and usually indicate a studio that took its
-            app offline; sanity-check the id against
-            `https://apkpure.com/developer/bsport` before approving.
+            The scraper never removes or renames entries; check the workflow
+            log for packages it skipped as ambiguous.
           labels: |
             automation
             scope:config
