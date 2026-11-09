@@ -367,6 +367,7 @@ KNOWN_STUDIOS: Final[tuple[tuple[int, str], ...]] = (
     (1826, "Famous Studio"),
     (1828, "SOLO CYCLO"),
     (1830, "C.line-Electrostimulation"),
+    (1835, "FITCORPS"),
     (1837, "O Studio - Yoga"),
     (1838, "Fysio Buitenveldert"),
     (1859, "Ground to Grow"),
